@@ -1,0 +1,12 @@
+{
+  "event_id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+  "event_type": "admin.config.changed",
+  "timestamp": "2026-06-30T00:00:00+00:00",
+  "schema_version": "1.0",
+  "source_service": "admin-service",
+  "admin_id": "admin-001",
+  "config_key": "max_tokens_per_request",
+  "old_value": 1024,
+  "new_value": 2048,
+  "tenant_id": "tenant-abc"
+}

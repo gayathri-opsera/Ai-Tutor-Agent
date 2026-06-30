@@ -1,0 +1,14 @@
+{
+  "event_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "event_type": "content.ingestion.requested",
+  "timestamp": "2026-06-30T00:00:00+00:00",
+  "schema_version": "1.0",
+  "source_service": "content-ingestion-service",
+  "content_id": "cnt-001",
+  "tenant_id": "tenant-abc",
+  "s3_bucket": "ai-tutor-content",
+  "s3_key": "uploads/tenant-abc/module1.pdf",
+  "file_format": "pdf",
+  "file_size_bytes": 2048576,
+  "requested_by": "user-xyz"
+}

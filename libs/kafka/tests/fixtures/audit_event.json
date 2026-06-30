@@ -1,0 +1,15 @@
+{
+  "event_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "event_type": "audit.action",
+  "timestamp": "2026-06-30T00:00:00+00:00",
+  "schema_version": "1.0",
+  "source_service": "auth-service",
+  "actor_id": "user-admin-001",
+  "actor_role": "admin",
+  "action": "content.delete",
+  "resource_type": "content",
+  "resource_id": "cnt-001",
+  "outcome": "success",
+  "ip_address": "10.0.1.50",
+  "metadata": {"reason": "stale content"}
+}

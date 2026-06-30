@@ -1,0 +1,16 @@
+{
+  "event_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "event_type": "llm.usage",
+  "timestamp": "2026-06-30T00:00:00+00:00",
+  "schema_version": "1.0",
+  "source_service": "llm-gateway",
+  "request_id": "req-001",
+  "tenant_id": "tenant-abc",
+  "provider": "openai",
+  "model_used": "gpt-4o",
+  "token_count_input": 512,
+  "token_count_output": 256,
+  "total_tokens": 768,
+  "estimated_cost_usd": 0.00641,
+  "latency_ms": 1243
+}

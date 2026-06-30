@@ -1,0 +1,12 @@
+{
+  "event_id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+  "event_type": "analytics.learner",
+  "timestamp": "2026-06-30T00:00:00+00:00",
+  "schema_version": "1.0",
+  "source_service": "chat-orchestrator",
+  "session_id": "sess-001",
+  "learner_id": "learner-001",
+  "tenant_id": "tenant-abc",
+  "action": "query",
+  "payload": {"query_length": 45, "response_rated": 5}
+}
