@@ -11,6 +11,8 @@ from .topics import (
 )
 from .producer import KafkaProducer
 from .consumer import KafkaConsumer
+from .local_bus import LocalEventBus, local_bus
+from .config import KafkaSettings, kafka_settings
 
 __all__ = [
     "TopicSpec",
@@ -24,4 +26,8 @@ __all__ = [
     "ADMIN_CONFIG_CHANGES",
     "KafkaProducer",
     "KafkaConsumer",
+    "LocalEventBus",
+    "local_bus",
+    "KafkaSettings",
+    "kafka_settings",
 ]

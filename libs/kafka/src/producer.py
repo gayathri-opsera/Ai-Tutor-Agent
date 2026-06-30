@@ -1,17 +1,31 @@
-"""Shared async Kafka producer with retry, DLQ routing, and schema validation."""
+"""Shared async Kafka producer with retry, DLQ routing, and schema validation.
+
+Fallback chain (evaluated per produce() call):
+  1. Real Kafka broker    — when sync_mode=False and broker connected
+  2. LocalEventBus        — when sync_mode=True (dispatches to in-process handlers)
+  3. stdout JSON log      — when broker unreachable and no local handler registered
+"""
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Imported at module level so tests can patch src.producer.local_bus
+from src.local_bus import local_bus  # noqa: E402
+
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 0.5   # seconds; doubles each attempt
+
+
+def _sync_mode_enabled() -> bool:
+    return os.getenv("KAFKA_SYNC_MODE", "false").lower() in ("1", "true", "yes")
 
 
 class ProduceError(Exception):
@@ -29,6 +43,9 @@ class KafkaProducer:
         Suffix appended to a topic name to form the DLQ topic name.
     max_retries:
         Number of delivery retries before routing to the DLQ.
+    sync_mode:
+        When True, bypasses the Kafka broker entirely and dispatches events to
+        the LocalEventBus. Defaults to the KAFKA_SYNC_MODE env var.
     _aiokafka_producer:
         Injectable aiokafka producer (used in tests to avoid real brokers).
     """
@@ -38,15 +55,30 @@ class KafkaProducer:
         bootstrap_servers: str = "localhost:9092",
         dlq_suffix: str = ".dlq",
         max_retries: int = _MAX_RETRIES,
+        sync_mode: bool | None = None,
         _aiokafka_producer: Any = None,
     ) -> None:
         self._bootstrap_servers = bootstrap_servers
         self._dlq_suffix = dlq_suffix
         self._max_retries = max_retries
+        self._sync_mode = sync_mode if sync_mode is not None else _sync_mode_enabled()
         self._producer = _aiokafka_producer
         self._started = False
 
+    @property
+    def sync_mode(self) -> bool:
+        return self._sync_mode
+
     async def start(self) -> None:
+        if self._sync_mode:
+            logger.info(
+                "KafkaProducer: KAFKA_SYNC_MODE=true — events will be dispatched "
+                "to LocalEventBus instead of a broker. Register handlers with "
+                "local_bus.subscribe(topic, handler) at service startup."
+            )
+            self._started = True
+            return
+
         if self._producer is None:
             try:
                 from aiokafka import AIOKafkaProducer  # type: ignore
@@ -76,15 +108,20 @@ class KafkaProducer:
         key: str | None = None,
         headers: dict[str, str] | None = None,
     ) -> None:
-        """Publish a message, retrying up to max_retries times.
+        """Publish a message via the active transport.
 
-        On persistent failure, routes to the DLQ topic instead.
-        Raises ProduceError only if the DLQ delivery also fails.
+        When sync_mode is True, dispatches directly to LocalEventBus.
+        Otherwise retries up to max_retries times against the Kafka broker,
+        then routes to the DLQ on persistent failure.
         """
         if isinstance(value, BaseModel):
             payload = value.model_dump()
         else:
             payload = dict(value)
+
+        if self._sync_mode:
+            await local_bus.publish(topic, payload, key=key)
+            return
 
         kafka_headers = (
             [(k, v.encode()) for k, v in headers.items()] if headers else None
