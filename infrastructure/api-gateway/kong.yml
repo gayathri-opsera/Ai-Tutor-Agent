@@ -1,0 +1,59 @@
+_format_version: "3.0"
+
+services:
+  - name: llm-gateway
+    url: http://llm-gateway:8001
+  - name: embedding-service
+    url: http://embedding-service:8002
+  - name: rag-pipeline
+    url: http://rag-pipeline:8010
+  - name: chat-orchestrator
+    url: http://chat-orchestrator:8020
+  - name: content-ingestion
+    url: http://content-ingestion:8030
+
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 60
+      policy: local
+      limit_by: consumer
+  - name: jwt
+    config:
+      claims_to_verify:
+        - exp
+      uri_param_names: []
+      key_claim_name: kid
+
+routes:
+  - name: chat-api
+    service: chat-orchestrator
+    paths: ["/api/v1/chat"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
+
+  - name: content-api
+    service: content-ingestion
+    paths: ["/api/v1/content"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
+
+  - name: rag-internal
+    service: rag-pipeline
+    paths: ["/api/internal/rag"]
+
+  - name: llm-api
+    service: llm-gateway
+    paths: ["/api/v1/llm"]
+
+  - name: embeddings-api
+    service: embedding-service
+    paths: ["/api/v1/embeddings"]
+
+consumers:
+  - username: ai-tutor-user
+    jwt_secrets:
+      - algorithm: RS256
+        key: "{{KEYCLOAK_PUBLIC_KEY}}"

@@ -1,0 +1,22 @@
+[
+  {"query": "What is machine learning?", "context": ["Machine learning is a subset of artificial intelligence."], "answer": "Machine learning is a subset of AI.", "expected_answer": "subset of artificial intelligence"},
+  {"query": "Define neural networks", "context": ["Neural networks are computing systems inspired by biological neurons."], "answer": "Neural networks mimic biological neurons.", "expected_answer": "inspired by biological neurons"},
+  {"query": "What is gradient descent?", "context": ["Gradient descent is an optimization algorithm."], "answer": "Gradient descent optimizes parameters.", "expected_answer": "optimization algorithm"},
+  {"query": "Explain overfitting", "context": ["Overfitting occurs when a model learns noise in training data."], "answer": "Overfitting means learning noise.", "expected_answer": "learns noise"},
+  {"query": "What is a transformer?", "context": ["Transformers use self-attention mechanisms."], "answer": "Transformers use self-attention.", "expected_answer": "self-attention"},
+  {"query": "Define RAG", "context": ["Retrieval augmented generation combines search with LLMs."], "answer": "RAG combines retrieval with generation.", "expected_answer": "retrieval augmented generation"},
+  {"query": "What is embedding?", "context": ["Embeddings are dense vector representations of text."], "answer": "Embeddings are vector representations.", "expected_answer": "vector representations"},
+  {"query": "Explain cosine similarity", "context": ["Cosine similarity measures angle between vectors."], "answer": "Cosine similarity measures vector angles.", "expected_answer": "angle between vectors"},
+  {"query": "What is BM25?", "context": ["BM25 is a ranking function for text retrieval."], "answer": "BM25 ranks text documents.", "expected_answer": "ranking function"},
+  {"query": "Define fine-tuning", "context": ["Fine-tuning adapts a pre-trained model to specific tasks."], "answer": "Fine-tuning adapts pre-trained models.", "expected_answer": "adapts pre-trained model"},
+  {"query": "What is a knowledge base?", "context": ["A knowledge base stores curated domain content."], "answer": "A knowledge base stores domain content.", "expected_answer": "curated domain content"},
+  {"query": "Explain tokenization", "context": ["Tokenization splits text into subword units."], "answer": "Tokenization splits text into tokens.", "expected_answer": "subword units"},
+  {"query": "What is prompt engineering?", "context": ["Prompt engineering designs effective LLM inputs."], "answer": "Prompt engineering designs LLM prompts.", "expected_answer": "effective LLM inputs"},
+  {"query": "Define hallucination in LLMs", "context": ["Hallucination is generating plausible but incorrect information."], "answer": "Hallucination is incorrect generation.", "expected_answer": "incorrect information"},
+  {"query": "What is chunking?", "context": ["Chunking splits documents into smaller segments for retrieval."], "answer": "Chunking splits documents for retrieval.", "expected_answer": "smaller segments"},
+  {"query": "Explain vector database", "context": ["Vector databases store and query high-dimensional embeddings."], "answer": "Vector DBs store embeddings.", "expected_answer": "high-dimensional embeddings"},
+  {"query": "What is re-ranking?", "context": ["Re-ranking reorders initial retrieval results for better relevance."], "answer": "Re-ranking improves result order.", "expected_answer": "reorders retrieval results"},
+  {"query": "Define confidence score", "context": ["Confidence scores indicate answer reliability."], "answer": "Confidence indicates reliability.", "expected_answer": "answer reliability"},
+  {"query": "What is SSE streaming?", "context": ["Server-sent events enable real-time streaming to clients."], "answer": "SSE enables real-time streaming.", "expected_answer": "real-time streaming"},
+  {"query": "Explain RBAC", "context": ["Role-based access control assigns permissions by role."], "answer": "RBAC assigns permissions by role.", "expected_answer": "permissions by role"}
+]

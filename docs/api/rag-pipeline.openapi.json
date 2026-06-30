@@ -1,0 +1,28 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "RAG Pipeline", "version": "1.0.0" },
+  "paths": {
+    "/api/internal/rag/retrieve": {
+      "post": {
+        "summary": "Retrieve relevant chunks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": { "type": "string" },
+                  "knowledge_base_id": { "type": "string" },
+                  "top_k": { "type": "integer", "default": 5 },
+                  "filters": { "type": "object" }
+                },
+                "required": ["query", "knowledge_base_id"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Retrieved chunks with query embedding" } }
+      }
+    }
+  }
+}
