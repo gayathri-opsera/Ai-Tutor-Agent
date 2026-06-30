@@ -1,0 +1,7 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #f5f7fb; color: #1a1a2e; }
+.app-layout { display: flex; min-height: 100vh; }
+.sidebar { width: 260px; background: #fff; border-right: 1px solid #e0e4ef; padding: 1rem; }
+.main { flex: 1; padding: 1.5rem; }
+button { cursor: pointer; }
+.error-banner { background: #fee; color: #900; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; }
