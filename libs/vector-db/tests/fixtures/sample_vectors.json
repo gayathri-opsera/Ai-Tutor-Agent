@@ -1,0 +1,20 @@
+[
+  {
+    "id": "vec-001",
+    "vector": [0.1, 0.2, 0.3, 0.4, 0.5],
+    "metadata": {"knowledge_base_id": "kb-001", "document_id": "doc-001", "content_type": "pdf", "is_active": true, "text": "The mitochondria is the powerhouse of the cell."},
+    "namespace": "kb-001"
+  },
+  {
+    "id": "vec-002",
+    "vector": [0.15, 0.25, 0.35, 0.45, 0.55],
+    "metadata": {"knowledge_base_id": "kb-001", "document_id": "doc-001", "content_type": "pdf", "is_active": true, "text": "Cellular respiration converts glucose to ATP energy."},
+    "namespace": "kb-001"
+  },
+  {
+    "id": "vec-003",
+    "vector": [0.9, 0.1, 0.05, 0.02, 0.01],
+    "metadata": {"knowledge_base_id": "kb-002", "document_id": "doc-002", "content_type": "pdf", "is_active": true, "text": "Machine learning uses data to train predictive models."},
+    "namespace": "kb-002"
+  }
+]
