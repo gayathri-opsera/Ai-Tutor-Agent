@@ -1,0 +1,32 @@
+{
+  "openai_500": {
+    "status_code": 500,
+    "body": {
+      "error": {
+        "message": "The server had an error processing your request.",
+        "type": "server_error",
+        "code": null
+      }
+    }
+  },
+  "openai_503": {
+    "status_code": 503,
+    "body": {
+      "error": {
+        "message": "Service temporarily unavailable.",
+        "type": "server_error",
+        "code": "service_unavailable"
+      }
+    }
+  },
+  "openai_429": {
+    "status_code": 429,
+    "body": {
+      "error": {
+        "message": "Rate limit exceeded.",
+        "type": "requests",
+        "code": "rate_limit_exceeded"
+      }
+    }
+  }
+}

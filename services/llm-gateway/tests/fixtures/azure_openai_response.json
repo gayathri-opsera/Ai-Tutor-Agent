@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-azure-xyz789",
+  "object": "chat.completion",
+  "created": 1720000001,
+  "model": "gpt-4o",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I am the Azure-backed AI tutor. Ask me anything!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 10,
+    "total_tokens": 22
+  }
+}
