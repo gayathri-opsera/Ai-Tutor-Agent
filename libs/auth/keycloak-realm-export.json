@@ -1,0 +1,27 @@
+{
+  "realm": "ai-tutor",
+  "enabled": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 28800,
+  "refreshTokenMaxReuse": 0,
+  "roles": {
+    "realm": [
+      {"name": "Learner", "description": "Standard learner role"},
+      {"name": "Creator", "description": "Content creator role"},
+      {"name": "Admin", "description": "Organization administrator"},
+      {"name": "SuperAdmin", "description": "Platform super administrator"}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ai-tutor-api",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000"]
+    }
+  ],
+  "users": []
+}

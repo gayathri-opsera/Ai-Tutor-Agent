@@ -1,0 +1,28 @@
+{
+  "issuer": "http://localhost:8080/realms/ai-tutor",
+  "audience": "ai-tutor-api",
+  "roles_claim": "realm_access.roles",
+  "token_types": {
+    "valid_admin": {
+      "sub": "admin-user",
+      "roles": ["Admin", "Learner"],
+      "exp_offset_seconds": 3600
+    },
+    "valid_learner": {
+      "sub": "learner-user",
+      "roles": ["Learner"],
+      "exp_offset_seconds": 3600
+    },
+    "expired": {
+      "sub": "expired-user",
+      "roles": ["Learner"],
+      "exp_offset_seconds": -3600
+    },
+    "wrong_role": {
+      "sub": "creator-user",
+      "roles": ["Creator"],
+      "exp_offset_seconds": 3600
+    },
+    "malformed": "not.a.valid.jwt.token"
+  }
+}
