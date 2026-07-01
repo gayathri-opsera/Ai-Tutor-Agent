@@ -61,6 +61,7 @@ data:
   WEAVIATE_URL: "http://weaviate:8080"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
+  DB_HOST: "postgres"
   DB_PORT: "5432"
   DB_NAME: "ai_tutor"
   DB_USER: "ai_tutor"

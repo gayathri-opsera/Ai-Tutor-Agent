@@ -281,6 +281,7 @@ jobs:
             --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
             --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
             --from-literal=KEYCLOAK_CLIENT_SECRET="${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
+            --from-literal=KEYCLOAK_ADMIN_PASSWORD="${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}" \
             --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             --from-literal=S3_ACCESS_KEY="${{ secrets.S3_ACCESS_KEY }}" \
             --from-literal=S3_SECRET_KEY="${{ secrets.S3_SECRET_KEY }}" \
