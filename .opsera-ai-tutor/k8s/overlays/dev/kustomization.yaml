@@ -49,8 +49,8 @@ images:
     newName: PLACEHOLDER_ECR_URI_FRONTEND
     newTag: v1.0.0
   - name: PLACEHOLDER_ECR_URI_LLM_GATEWAY
-    newName: PLACEHOLDER_ECR_URI_LLM_GATEWAY
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-llm-gateway
+    newTag: dev-af80b3e-20260701122931
   - name: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
     newName: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
     newTag: v1.0.0
