@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics
+spec:
+  template:
+    spec:
+      containers:
+        - name: analytics
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-analytics:dev-af80b3e-20260701122928

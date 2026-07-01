@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learner-profile
+spec:
+  template:
+    spec:
+      containers:
+        - name: learner-profile
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-learner-profile:dev-af80b3e-20260701122930

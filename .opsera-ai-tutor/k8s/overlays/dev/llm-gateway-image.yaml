@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: llm-gateway
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-llm-gateway:dev-af80b3e-20260701122931

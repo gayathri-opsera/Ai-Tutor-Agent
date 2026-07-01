@@ -202,74 +202,60 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update Kustomization Image Tag
+      - name: Write Service Image Patch
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           ECR_URI="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}"
           IMAGE_TAG="${{ needs.build-image.outputs.image_tag }}"
-          OVERLAY=".opsera-ai-tutor/k8s/overlays/dev/kustomization.yaml"
+          PATCH_FILE=".opsera-ai-tutor/k8s/overlays/dev/${{ env.SERVICE }}-image.yaml"
 
-          # Replace only newName and newTag for this service — leave others unchanged
-          python3 - <<PYEOF
-          import re, sys
-
-          with open("${OVERLAY}", "r") as f:
-              content = f.read()
-
-          # Update the frontend image entry
-          content = re.sub(
-              r'(- name: PLACEHOLDER_ECR_URI_FRONTEND\n\s+newName: ).*',
-              r'\g<1>${ECR_URI}',
-              content
-          )
-          content = re.sub(
-              r'(- name: PLACEHOLDER_ECR_URI_FRONTEND\n\s+newName: .*\n\s+newTag: ).*',
-              r'\g<1>${IMAGE_TAG}',
-              content
-          )
-
-          with open("${OVERLAY}", "w") as f:
-              f.write(content)
-
-          print("✅ Updated PLACEHOLDER_ECR_URI_FRONTEND → ${ECR_URI}:${IMAGE_TAG}")
-          PYEOF
+          # Each service writes ONLY its own file — no shared file, no conflicts
+          cat > "${PATCH_FILE}" <<YAML
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ env.SERVICE }}
+spec:
+  template:
+    spec:
+      containers:
+        - name: ${{ env.SERVICE }}
+          image: ${ECR_URI}:${IMAGE_TAG}
+YAML
+          echo "✅ Updated ${PATCH_FILE} → ${ECR_URI}:${IMAGE_TAG}"
 
       - name: Validate Kustomize Build
         run: |
           kubectl kustomize .opsera-ai-tutor/k8s/overlays/dev > /dev/null \
-            && echo "✅ Kustomize build validation passed" \
+            && echo "✅ Kustomize validation passed" \
             || (echo "❌ Kustomize build failed"; exit 1)
-        env:
-          KUBECTL_EXTERNAL_DIFF: ""
 
-      - name: Commit and Push Manifests
+      - name: Commit and Push Service Patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet && git diff --cached --quiet; then
-            echo "No manifest changes to commit"
+          PATCH_FILE=".opsera-ai-tutor/k8s/overlays/dev/${{ env.SERVICE }}-image.yaml"
+
+          if git diff --quiet "${PATCH_FILE}"; then
+            echo "No changes to commit"
             exit 0
           fi
 
-          git add .opsera-ai-tutor/k8s/overlays/dev/kustomization.yaml
-          git commit -m "chore(deploy): update frontend image to ${{ needs.build-image.outputs.image_tag }} [skip ci]"
+          git add "${PATCH_FILE}"
+          git commit -m "chore(deploy): update ${{ env.SERVICE }} to ${{ needs.build-image.outputs.image_tag }} [skip ci]"
 
+          # Retry push — conflicts are now impossible since each service owns its file
           for i in 1 2 3; do
             if git push origin main; then
               echo "✅ Pushed manifest update"
               exit 0
             fi
-            echo "Push failed, retrying ($i/3)..."
-            if ! git pull --rebase origin main; then
-              git rebase --abort || true
-              git pull --no-rebase origin main
-            fi
-            sleep 3
+            echo "Push conflict, pulling latest... (${i}/3)"
+            git pull --rebase origin main
+            sleep 2
           done
           exit 1
-
-  # Stage 6: Create ArgoCD Application (idempotent)
   create-argocd-app:
     name: "06 - Create ArgoCD Application"
     runs-on: ubuntu-latest

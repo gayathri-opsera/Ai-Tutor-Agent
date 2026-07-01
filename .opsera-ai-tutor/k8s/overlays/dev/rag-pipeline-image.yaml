@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-pipeline
+spec:
+  template:
+    spec:
+      containers:
+        - name: rag-pipeline
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-rag-pipeline:dev-af80b3e-20260701122957

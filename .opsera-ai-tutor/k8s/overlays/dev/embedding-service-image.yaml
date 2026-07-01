@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embedding-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: embedding-service
+          image: PLACEHOLDER_EMBEDDING_SERVICE_ECR:v1.0.0

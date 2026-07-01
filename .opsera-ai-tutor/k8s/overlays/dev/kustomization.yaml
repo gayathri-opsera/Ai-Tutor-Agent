@@ -44,46 +44,62 @@ replicas:
   - name: audit
     count: 1
 
-images:
-  - name: PLACEHOLDER_ECR_URI_FRONTEND
-    newName: PLACEHOLDER_ECR_URI_FRONTEND
-    newTag: v1.0.0
-  - name: PLACEHOLDER_ECR_URI_LLM_GATEWAY
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-llm-gateway
-    newTag: dev-af80b3e-20260701122931
-  - name: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
-    newName: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
-    newTag: v1.0.0
-  - name: PLACEHOLDER_ECR_URI_RAG_PIPELINE
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-rag-pipeline
-    newTag: dev-af80b3e-20260701122957
-  - name: PLACEHOLDER_ECR_URI_CONTENT_INGESTION
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-ingestion
-    newTag: dev-af80b3e-20260701122929
-  - name: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-chat-orchestrator
-    newTag: dev-af80b3e-20260701122958
-  - name: PLACEHOLDER_ECR_URI_AGENT_REASONING
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-agent-reasoning
-    newTag: dev-af80b3e-20260701122929
-  - name: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-confidence-grader
-    newTag: dev-af80b3e-20260701122932
-  - name: PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-management
-    newTag: dev-af80b3e-20260701122926
-  - name: PLACEHOLDER_ECR_URI_LEARNER_PROFILE
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-learner-profile
-    newTag: dev-af80b3e-20260701122930
-  - name: PLACEHOLDER_ECR_URI_ADMIN_CONFIG
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-admin-config
-    newTag: dev-af80b3e-20260701122928
-  - name: PLACEHOLDER_ECR_URI_ASSESSMENT
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-assessment
-    newTag: dev-af80b3e-20260701122926
-  - name: PLACEHOLDER_ECR_URI_ANALYTICS
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-analytics
-    newTag: dev-af80b3e-20260701122928
-  - name: PLACEHOLDER_ECR_URI_AUDIT
-    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-audit
-    newTag: dev-af80b3e-20260701122932
+# Per-service image patches — each service CI/CD writes ONLY its own file.
+# This prevents merge conflicts when multiple pipelines run concurrently.
+patches:
+  - path: frontend-image.yaml
+    target:
+      kind: Deployment
+      name: frontend
+  - path: llm-gateway-image.yaml
+    target:
+      kind: Deployment
+      name: llm-gateway
+  - path: embedding-service-image.yaml
+    target:
+      kind: Deployment
+      name: embedding-service
+  - path: rag-pipeline-image.yaml
+    target:
+      kind: Deployment
+      name: rag-pipeline
+  - path: content-ingestion-image.yaml
+    target:
+      kind: Deployment
+      name: content-ingestion
+  - path: chat-orchestrator-image.yaml
+    target:
+      kind: Deployment
+      name: chat-orchestrator
+  - path: agent-reasoning-image.yaml
+    target:
+      kind: Deployment
+      name: agent-reasoning
+  - path: confidence-grader-image.yaml
+    target:
+      kind: Deployment
+      name: confidence-grader
+  - path: content-management-image.yaml
+    target:
+      kind: Deployment
+      name: content-management
+  - path: learner-profile-image.yaml
+    target:
+      kind: Deployment
+      name: learner-profile
+  - path: admin-config-image.yaml
+    target:
+      kind: Deployment
+      name: admin-config
+  - path: assessment-image.yaml
+    target:
+      kind: Deployment
+      name: assessment
+  - path: analytics-image.yaml
+    target:
+      kind: Deployment
+      name: analytics
+  - path: audit-image.yaml
+    target:
+      kind: Deployment
+      name: audit
