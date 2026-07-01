@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: rag-pipeline
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-rag-pipeline:dev-dd56058-20260701124542
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-rag-pipeline:dev-1db4ee0-20260701132315
