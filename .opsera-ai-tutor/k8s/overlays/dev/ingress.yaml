@@ -20,63 +20,70 @@ spec:
                 name: frontend
                 port:
                   number: 8080
-          - path: /api/llm
+          - path: /api/internal/llm
             pathType: Prefix
             backend:
               service:
                 name: llm-gateway
                 port:
                   number: 8000
-          - path: /api/rag
+          - path: /api/internal/rag
             pathType: Prefix
             backend:
               service:
                 name: rag-pipeline
                 port:
                   number: 8002
-          - path: /api/chat
-            pathType: Prefix
-            backend:
-              service:
-                name: chat-orchestrator
-                port:
-                  number: 8004
-          - path: /api/agent
+          - path: /api/internal/agent
             pathType: Prefix
             backend:
               service:
                 name: agent-reasoning
                 port:
                   number: 8005
-          - path: /api/content
+          - path: /api/v1/knowledge-bases
             pathType: Prefix
             backend:
               service:
                 name: content-management
                 port:
                   number: 8007
-          - path: /api/learner
+          - path: /api/v1/content
+            pathType: Prefix
+            backend:
+              service:
+                name: content-ingestion
+                port:
+                  number: 8003
+          - path: /api/v1/chat
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-orchestrator
+                port:
+                  number: 8004
+          - path: /api/v1/learner
             pathType: Prefix
             backend:
               service:
                 name: learner-profile
                 port:
                   number: 8008
-          - path: /api/admin
+          - path: /api/v1/admin
             pathType: Prefix
             backend:
               service:
                 name: admin-config
                 port:
                   number: 8009
-          - path: /api/assessment
+          - path: /api/v1/assessments
             pathType: Prefix
             backend:
               service:
                 name: assessment
                 port:
                   number: 8010
-          - path: /api/analytics
+          - path: /api/v1/analytics
             pathType: Prefix
             backend:
               service:

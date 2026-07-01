@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/v1/content-mgmt", tags=["content-mgmt"])
+router = APIRouter(prefix="/api/v1", tags=["content-mgmt"])
 
 
 class CreateKB(BaseModel):
