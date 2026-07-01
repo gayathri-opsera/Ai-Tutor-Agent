@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: embedding-service
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-embedding-service:dev-dd56058-20260701124502
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-embedding-service:dev-aad8a7a-20260701130905
