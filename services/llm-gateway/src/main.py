@@ -37,6 +37,10 @@ def create_app() -> FastAPI:
 
     app.include_router(llm_router)
 
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "healthy"}
+
     @app.on_event("startup")
     async def startup() -> None:
         # Allow test fixtures to inject a pre-configured router via app.state

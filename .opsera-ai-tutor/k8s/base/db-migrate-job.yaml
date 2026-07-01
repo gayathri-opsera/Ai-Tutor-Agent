@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: db-migrate
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: postgres:15-alpine
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-tutor-secrets
+                  key: DB_PASSWORD
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              psql -h postgres -U ai_tutor -d ai_tutor <<'ENDSQL'
+              CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+              DO $$ BEGIN
+                CREATE TYPE content_type_enum AS ENUM ('pdf','docx','mp4','mp3','wav','url','text');
+              EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+              DO $$ BEGIN
+                CREATE TYPE document_status_enum AS ENUM ('active','retired','processing','failed');
+              EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+              CREATE TABLE IF NOT EXISTS knowledge_bases (
+                id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                name             VARCHAR(255) NOT NULL,
+                description      TEXT,
+                organization_id  VARCHAR(255) NOT NULL,
+                is_active        BOOLEAN NOT NULL DEFAULT true,
+                created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE INDEX IF NOT EXISTS ix_knowledge_bases_org
+                ON knowledge_bases(organization_id, is_active);
+
+              CREATE TABLE IF NOT EXISTS documents (
+                id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+                title             TEXT NOT NULL,
+                content_type      content_type_enum NOT NULL DEFAULT 'text',
+                status            document_status_enum NOT NULL DEFAULT 'active',
+                chunk_count       INTEGER NOT NULL DEFAULT 0,
+                is_active         BOOLEAN NOT NULL DEFAULT true,
+                retired_at        TIMESTAMPTZ,
+                created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE INDEX IF NOT EXISTS ix_documents_kb_active
+                ON documents(knowledge_base_id, is_active);
+              ENDSQL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

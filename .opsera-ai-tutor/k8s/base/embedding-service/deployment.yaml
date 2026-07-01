@@ -18,9 +18,7 @@ spec:
         app.kubernetes.io/component: embedding-service
     spec:
       serviceAccountName: ai-tutor
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
+      securityContext: {}
       containers:
         - name: embedding-service
           image: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
