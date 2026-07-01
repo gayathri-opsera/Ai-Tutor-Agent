@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: PLACEHOLDER_FRONTEND_ECR:v1.0.0
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-frontend:dev-4e35e3e-20260701125241
