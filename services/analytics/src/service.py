@@ -1,41 +1,67 @@
-"""Analytics aggregation service."""
+"""Analytics aggregation service — PostgreSQL-backed."""
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+import json
+import os
+import uuid
 from typing import Any
 
+import asyncpg
 
-@dataclass
-class AnalyticsEvent:
-    event_type: str
-    user_id: str
-    topic: str = ""
-    rating: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+DB_DSN = os.getenv(
+    "DATABASE_URL",
+    "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor",
+)
 
 
 class AnalyticsService:
-    def __init__(self) -> None:
-        self.events: list[AnalyticsEvent] = []
+    def __init__(self, pool: asyncpg.Pool | None = None) -> None:
+        self._pool = pool
+
+    async def _get_pool(self) -> asyncpg.Pool:
+        if self._pool is None:
+            self._pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
+        return self._pool
 
     async def consume(self, payload: dict) -> None:
-        self.events.append(AnalyticsEvent(
-            event_type=payload.get("event_type", "unknown"),
-            user_id=payload.get("user_id", ""),
-            topic=payload.get("topic", ""),
-            rating=payload.get("rating"),
-            metadata=payload.get("metadata", {}),
-        ))
+        pool = await self._get_pool()
+        event_id = str(uuid.uuid4())
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO local_analytics_events (id, event_type, user_id, topic, rating, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                """,
+                event_id,
+                payload.get("event_type", "unknown"),
+                payload.get("user_id", ""),
+                payload.get("topic", ""),
+                payload.get("rating"),
+                json.dumps(payload.get("metadata", {})),
+            )
 
-    def summary(self) -> dict[str, Any]:
-        session_events = [e for e in self.events if e.event_type == "session.created"]
-        query_events = [e for e in self.events if e.event_type == "query.submitted"]
-        ratings = [e.rating for e in self.events if e.rating is not None]
-        topics = Counter(e.topic for e in self.events if e.topic)
+    async def summary(self) -> dict[str, Any]:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            sessions = await conn.fetchval(
+                "SELECT COUNT(*) FROM local_analytics_events WHERE event_type = 'session.created'"
+            )
+            queries = await conn.fetchval(
+                "SELECT COUNT(*) FROM local_analytics_events WHERE event_type = 'query.submitted'"
+            )
+            avg_rating = await conn.fetchval(
+                "SELECT AVG(rating) FROM local_analytics_events WHERE rating IS NOT NULL"
+            )
+            topic_rows = await conn.fetch(
+                "SELECT topic, COUNT(*) as cnt FROM local_analytics_events WHERE topic != '' GROUP BY topic ORDER BY cnt DESC LIMIT 10"
+            )
+            recent = await conn.fetch(
+                "SELECT event_type, user_id, topic, rating, created_at FROM local_analytics_events ORDER BY created_at DESC LIMIT 20"
+            )
         return {
-            "session_count": len(session_events),
-            "query_volume": len(query_events),
-            "average_rating": sum(ratings) / len(ratings) if ratings else 0.0,
-            "topic_distribution": dict(topics),
+            "session_count": sessions or 0,
+            "query_volume": queries or 0,
+            "average_rating": round(float(avg_rating), 2) if avg_rating else 0.0,
+            "topic_distribution": {r["topic"]: r["cnt"] for r in topic_rows},
+            "recent_events": [dict(r) for r in recent],
         }

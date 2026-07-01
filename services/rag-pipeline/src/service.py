@@ -1,12 +1,15 @@
 """Core RAG retrieval service."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
 
 import httpx
 
 from src.hybrid_search import hybrid_search
 from src.reranker import reciprocal_rank_fusion
+
+logger = logging.getLogger(__name__)
 
 
 class VectorDBClientProtocol(Protocol):
@@ -65,7 +68,7 @@ class RAGPipelineService:
         close_client = self._http is None
         try:
             resp = await client.post(
-                f"{self.embedding_url}/api/v1/embeddings",
+                f"{self.embedding_url}/api/internal/embeddings/generate",
                 json={"texts": [text]},
             )
             resp.raise_for_status()
@@ -74,3 +77,27 @@ class RAGPipelineService:
         finally:
             if close_client:
                 await client.aclose()
+
+    async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed multiple texts in one call (batch of up to 100)."""
+        client = self._http or httpx.AsyncClient(timeout=60.0)
+        close_client = self._http is None
+        results: list[list[float]] = []
+        try:
+            for start in range(0, len(texts), 100):
+                batch = texts[start:start + 100]
+                resp = await client.post(
+                    f"{self.embedding_url}/api/internal/embeddings/generate",
+                    json={"texts": batch},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results.extend(data["embeddings"])
+        except Exception as exc:
+            logger.warning("Embedding batch failed, using zero vectors: %s", exc)
+            dim = len(results[0]) if results else 1536
+            results.extend([[0.0] * dim for _ in range(len(texts) - len(results))])
+        finally:
+            if close_client:
+                await client.aclose()
+        return results

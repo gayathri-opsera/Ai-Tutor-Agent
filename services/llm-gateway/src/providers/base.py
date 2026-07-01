@@ -10,6 +10,7 @@ from src.schemas.response import CompletionResponse, StreamChunk
 # Cost per 1 000 tokens in USD — updated periodically; override via env.
 COST_TABLE: dict[str, dict[str, float]] = {
     # model_name: {input: $/1k, output: $/1k}
+    # OpenAI
     "gpt-4o": {"input": 0.005, "output": 0.015},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "gpt-4": {"input": 0.03, "output": 0.06},
@@ -17,6 +18,12 @@ COST_TABLE: dict[str, dict[str, float]] = {
     "text-embedding-ada-002": {"input": 0.0001, "output": 0.0},
     # Azure deployments re-use the same cost table
     "gpt-4o-azure": {"input": 0.005, "output": 0.015},
+    # Anthropic Claude
+    "claude-sonnet-4-5":           {"input": 0.003,   "output": 0.015},
+    "claude-opus-4-5":             {"input": 0.015,   "output": 0.075},
+    "claude-3-5-haiku-20241022":   {"input": 0.0008,  "output": 0.004},
+    "claude-3-5-sonnet-20241022":  {"input": 0.003,   "output": 0.015},
+    "claude-3-opus-20240229":      {"input": 0.015,   "output": 0.075},
 }
 
 

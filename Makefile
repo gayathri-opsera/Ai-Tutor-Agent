@@ -17,11 +17,11 @@ up:          ## Start all services (Kafka runs in SYNC_MODE — no broker needed
 	@echo ""
 	@echo "  ✅ AI Tutor Agent running"
 	@echo "  🌐  App:       http://localhost"
-	@echo "  🤖  LLM GW:   http://localhost:8000/docs"
-	@echo "  📦  MinIO:     http://localhost:9001  (admin/minioadmin)"
+	@echo "  🤖  LLM GW:   http://localhost:18000/docs"
+	@echo "  📦  MinIO:     http://localhost:9101  (admin/minioadmin)"
 	@echo "  🗄️   PG:        localhost:5432"
 	@echo "  🔴  Redis:     localhost:6379"
-	@echo "  🌲  Weaviate:  http://localhost:8080"
+	@echo "  🌲  Weaviate:  http://localhost:18080"
 	@echo ""
 	@echo "  Run 'make logs' to follow logs"
 
@@ -75,14 +75,14 @@ health:      ## Check health of all services
 	@echo "Checking service health..."
 	@for url in \
 	  "http://localhost/health|API Gateway" \
-	  "http://localhost:8000/api/internal/llm/health|LLM Gateway" \
+	  "http://localhost:18000/api/internal/llm/health|LLM Gateway" \
 	  "http://localhost:8001/api/internal/embeddings/health|Embedding Svc" \
 	  "http://localhost:8002/health|RAG Pipeline" \
 	  "http://localhost:8003/health|Content Ingestion" \
 	  "http://localhost:8004/health|Chat Orchestrator" \
 	  "http://localhost:8005/health|Agent Reasoning" \
 	  "http://localhost:8006/health|Confidence Grader" \
-	  "http://localhost:8080/v1/.well-known/ready|Weaviate"; do \
+	  "http://localhost:18080/v1/.well-known/ready|Weaviate"; do \
 	  endpoint=$$(echo $$url | cut -d'|' -f1); \
 	  name=$$(echo $$url | cut -d'|' -f2); \
 	  status=$$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 $$endpoint); \

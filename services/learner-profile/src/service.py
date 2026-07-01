@@ -1,60 +1,127 @@
-"""Learner profile service."""
+"""Learner Profile Service — PostgreSQL-backed."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import os
+import uuid
 from typing import Any
 
+import asyncpg
 
-@dataclass
-class TopicProficiency:
-    topic: str
-    level: str  # not_started, in_progress, mastered
-    score: float = 0.0
-
-
-@dataclass
-class LearnerProfile:
-    user_id: str
-    display_name: str = ""
-    topics: list[TopicProficiency] = field(default_factory=list)
-    preferences: dict[str, Any] = field(default_factory=dict)
+DB_DSN = os.getenv(
+    "DATABASE_URL",
+    "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor",
+)
 
 
 class LearnerProfileService:
-    def __init__(self, store: dict[str, LearnerProfile] | None = None) -> None:
-        self._store = store if store is not None else {}
+    def __init__(self, pool: asyncpg.Pool | None = None) -> None:
+        self._pool = pool
 
-    def get_or_create(self, user_id: str) -> LearnerProfile:
-        if user_id not in self._store:
-            self._store[user_id] = LearnerProfile(user_id=user_id)
-        return self._store[user_id]
+    async def _pool_(self) -> asyncpg.Pool:
+        if self._pool is None:
+            self._pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
+        return self._pool
 
-    def update_profile(self, user_id: str, data: dict[str, Any]) -> LearnerProfile:
-        profile = self.get_or_create(user_id)
-        if "display_name" in data:
-            profile.display_name = data["display_name"]
-        if "preferences" in data:
-            profile.preferences.update(data["preferences"])
-        return profile
+    async def get_or_create(self, user_id: str) -> dict[str, Any]:
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM local_learner_profiles WHERE user_id = $1", user_id
+            )
+            if not row:
+                await conn.execute(
+                    """
+                    INSERT INTO local_learner_profiles (user_id, display_name, proficiency_level, preferences)
+                    VALUES ($1, $2, 'beginner', '{}')
+                    ON CONFLICT (user_id) DO NOTHING
+                    """,
+                    user_id, user_id,
+                )
+                row = await conn.fetchrow(
+                    "SELECT * FROM local_learner_profiles WHERE user_id = $1", user_id
+                )
+            return dict(row)
 
-    def update_topic(self, user_id: str, topic: str, level: str, score: float) -> None:
-        profile = self.get_or_create(user_id)
-        for t in profile.topics:
-            if t.topic == topic:
-                t.level = level
-                t.score = score
-                return
-        profile.topics.append(TopicProficiency(topic=topic, level=level, score=score))
+    async def update_profile(self, user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        profile = await self.get_or_create(user_id)
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            if "display_name" in data or "proficiency_level" in data or "preferences" in data:
+                await conn.execute(
+                    """
+                    UPDATE local_learner_profiles
+                    SET display_name       = COALESCE($2, display_name),
+                        proficiency_level  = COALESCE($3, proficiency_level),
+                        preferences        = COALESCE($4::jsonb, preferences),
+                        updated_at         = now()
+                    WHERE user_id = $1
+                    """,
+                    user_id,
+                    data.get("display_name"),
+                    data.get("proficiency_level"),
+                    str(data["preferences"]).replace("'", '"') if "preferences" in data else None,
+                )
+        return await self.get_or_create(user_id)
 
-    def get_progress(self, user_id: str) -> dict[str, Any]:
-        profile = self.get_or_create(user_id)
-        mastered = [t.topic for t in profile.topics if t.level == "mastered"]
-        in_progress = [t.topic for t in profile.topics if t.level == "in_progress"]
-        not_started = [t.topic for t in profile.topics if t.level == "not_started"]
+    async def update_topic(self, user_id: str, topic: str, level: str, score: float, kb_id: str | None = None) -> None:
+        await self.get_or_create(user_id)
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT id FROM local_topic_progress WHERE user_id = $1 AND topic = $2",
+                user_id, topic,
+            )
+            if existing:
+                await conn.execute(
+                    """
+                    UPDATE local_topic_progress
+                    SET status = $3, score = $4, question_count = question_count + 1,
+                        knowledge_base_id = COALESCE($5, knowledge_base_id), updated_at = now()
+                    WHERE user_id = $1 AND topic = $2
+                    """,
+                    user_id, topic, level, score, kb_id,
+                )
+            else:
+                await conn.execute(
+                    """
+                    INSERT INTO local_topic_progress (id, user_id, topic, status, score, question_count, knowledge_base_id)
+                    VALUES ($1, $2, $3, $4, $5, 1, $6)
+                    """,
+                    str(uuid.uuid4()), user_id, topic, level, score, kb_id,
+                )
+        # bump query count
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE local_learner_profiles SET total_queries = total_queries + 1, updated_at = now() WHERE user_id = $1",
+                user_id,
+            )
+
+    async def increment_session(self, user_id: str) -> None:
+        await self.get_or_create(user_id)
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE local_learner_profiles SET total_sessions = total_sessions + 1, updated_at = now() WHERE user_id = $1",
+                user_id,
+            )
+
+    async def get_progress(self, user_id: str) -> dict[str, Any]:
+        profile = await self.get_or_create(user_id)
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT topic, status, score, question_count, knowledge_base_id FROM local_topic_progress WHERE user_id = $1 ORDER BY updated_at DESC",
+                user_id,
+            )
+        topics = [dict(r) for r in rows]
         return {
             "user_id": user_id,
-            "mastered": mastered,
-            "in_progress": in_progress,
-            "not_started": not_started,
-            "topics": [{"topic": t.topic, "level": t.level, "score": t.score} for t in profile.topics],
+            "display_name": profile["display_name"],
+            "proficiency_level": profile["proficiency_level"],
+            "total_sessions": profile["total_sessions"],
+            "total_queries": profile["total_queries"],
+            "mastered": [t["topic"] for t in topics if t["status"] == "mastered"],
+            "in_progress": [t["topic"] for t in topics if t["status"] == "in_progress"],
+            "not_started": [t["topic"] for t in topics if t["status"] == "not_started"],
+            "topics": topics,
         }

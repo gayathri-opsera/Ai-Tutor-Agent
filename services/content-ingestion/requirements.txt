@@ -9,6 +9,7 @@ pypdf==5.1.0
 beautifulsoup4==4.12.3
 datasketch==1.6.5
 openai==1.57.4
+asyncpg>=0.29.0
 
 pytest==8.3.4
 pytest-asyncio==0.24.0

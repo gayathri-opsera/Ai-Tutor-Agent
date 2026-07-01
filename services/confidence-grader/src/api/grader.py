@@ -23,6 +23,7 @@ async def grader_evaluate(body: EvaluateRequest):
         "confidence": result.confidence,
         "answer": result.answer,
         "verified": result.verified,
+        "source_type": result.source_type.value,
         "chunk_grades": [
             {"chunk_id": g.chunk_id, "reliability": g.reliability.value, "score": g.score}
             for g in result.chunk_grades

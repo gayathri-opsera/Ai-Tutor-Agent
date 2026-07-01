@@ -18,7 +18,7 @@ from src.schemas.response import (
 
 _TIER_TO_MODEL: dict[ModelTier, str] = {
     ModelTier.SMALL: "gpt-4o-mini",
-    ModelTier.STANDARD: "gpt-4o",
+    ModelTier.STANDARD: "gpt-4o-mini",   # higher rate limits; upgrade to gpt-4o when on Tier 2+
     ModelTier.LARGE: "gpt-4o",
     ModelTier.EMBEDDING: "text-embedding-ada-002",
 }

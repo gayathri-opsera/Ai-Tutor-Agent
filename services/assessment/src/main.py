@@ -1,16 +1,31 @@
-from fastapi import FastAPI
-from src.api.assessment import router
-from src.service import AssessmentService
+"""Assessment Service — FastAPI entrypoint."""
+from __future__ import annotations
 
-app = FastAPI(title="Assessment Engine")
+import logging
+import os
+from contextlib import asynccontextmanager
+
+import asyncpg
+from fastapi import FastAPI
+
+from src.api.assessment import router
+from src.service import AssessmentService, DB_DSN
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
+    app.state.assessment_service = AssessmentService(pool=pool)
+    yield
+    await pool.close()
+
+
+app = FastAPI(title="Assessment Engine", lifespan=lifespan)
 app.include_router(router)
 
-@app.on_event("startup")
-async def startup():
-    app.state.assessment_service = AssessmentService()
-
-app.state.assessment_service = AssessmentService()
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "service": "assessment"}

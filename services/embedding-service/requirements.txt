@@ -6,8 +6,8 @@ pydantic-settings==2.6.1
 python-dotenv==1.0.1
 anyio==4.7.0
 
-# Local sentence-transformers backend (optional — install separately on GPU nodes)
-# sentence-transformers==3.3.1
+# Local sentence-transformers backend (runs on CPU, no API key needed)
+sentence-transformers==3.3.1
 
 # Dev/test
 pytest==8.3.4

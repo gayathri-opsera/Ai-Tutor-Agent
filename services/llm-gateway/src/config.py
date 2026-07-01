@@ -3,15 +3,21 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # OpenAI primary provider
+    # OpenAI
     openai_api_key: str = ""
     openai_api_base: str = "https://api.openai.com/v1"
 
-    # Azure OpenAI fallback provider
+    # Azure OpenAI
     azure_openai_api_key: str = ""
     azure_openai_endpoint: str = ""
     azure_openai_api_version: str = "2024-02-01"
     azure_openai_deployment: str = "gpt-4o"
+
+    # Anthropic
+    anthropic_api_key: str = ""
+
+    # Groq
+    groq_api_key: str = ""
 
     # Ollama (local dev)
     ollama_base_url: str = "http://localhost:11434"
@@ -31,8 +37,8 @@ class Settings(BaseSettings):
     pii_patterns_file: str = ""   # path to extra patterns JSON; built-ins always active
 
     # Gateway
-    default_provider: str = "openai"          # openai | azure | ollama
-    fallback_provider: str = "azure"
+    default_provider: str = "anthropic"       # openai | azure | anthropic | ollama
+    fallback_provider: str = "openai"
     request_timeout_seconds: float = 120.0
     log_level: str = "INFO"
 

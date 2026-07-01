@@ -19,8 +19,10 @@ from src.circuit_breaker.circuit_breaker import CircuitBreaker, CircuitState
 from src.config import settings
 from src.kafka.usage_logger import KafkaUsageLogger, UsageEvent, get_usage_logger
 from src.middleware.pii_scrubber import PIIScrubber
+from src.providers.anthropic_provider import AnthropicProvider
 from src.providers.azure_openai_provider import AzureOpenAIProvider
 from src.providers.base import LLMProvider
+from src.providers.groq_provider import GroqProvider
 from src.providers.ollama_provider import OllamaProvider
 from src.providers.openai_provider import OpenAIProvider
 from src.schemas.request import CompletionRequest
@@ -29,9 +31,11 @@ from src.schemas.response import CompletionResponse, StreamChunk
 logger = logging.getLogger(__name__)
 
 _PROVIDER_MAP: dict[str, type[LLMProvider]] = {
-    "openai": OpenAIProvider,
-    "azure": AzureOpenAIProvider,
-    "ollama": OllamaProvider,
+    "openai":    OpenAIProvider,
+    "azure":     AzureOpenAIProvider,
+    "anthropic": AnthropicProvider,
+    "groq":      GroqProvider,
+    "ollama":    OllamaProvider,
 }
 
 
@@ -49,8 +53,10 @@ class LLMRouter:
         pii_scrubber: PIIScrubber | None = None,
         usage_logger: KafkaUsageLogger | None = None,
     ) -> None:
-        self._primary = primary or OpenAIProvider()
-        self._fallback = fallback or AzureOpenAIProvider()
+        primary_cls  = _PROVIDER_MAP.get(settings.default_provider,  AnthropicProvider)
+        fallback_cls = _PROVIDER_MAP.get(settings.fallback_provider, OpenAIProvider)
+        self._primary = primary or primary_cls()
+        self._fallback = fallback or fallback_cls()
         self._cb = circuit_breaker or CircuitBreaker(
             failure_threshold=settings.cb_failure_threshold,
             error_rate_threshold=settings.cb_error_rate_threshold,
@@ -63,6 +69,10 @@ class LLMRouter:
         self._usage_logger = usage_logger or get_usage_logger()
 
     # ── Provider resolution ─────────────────────────────────────────────────
+
+    @property
+    def primary(self) -> LLMProvider:
+        return self._primary
 
     def _resolve_provider(self, request: CompletionRequest) -> LLMProvider:
         """Select the provider for this request respecting circuit state."""

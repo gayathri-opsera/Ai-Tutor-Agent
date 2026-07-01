@@ -1,12 +1,105 @@
-"""Chat orchestrator service."""
+"""Chat orchestrator service — connects sessions to LLM Gateway + RAG pipeline."""
 from __future__ import annotations
 
 import json
+import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Protocol
+from typing import AsyncIterator, Protocol
 
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+def _demo_answer(question: str) -> str:
+    """Return a rich educational fallback when the LLM backend is unavailable."""
+    q = question.lower()
+
+    if any(w in q for w in ["python", "variable", "function", "class", "loop", "list", "dict", "tuple"]):
+        return (
+            "## Python Overview\n\n"
+            "Python is a **high-level, dynamically typed** language favoured for its readable syntax.\n\n"
+            "### Key concepts\n"
+            "- **Variables** — no declaration needed: `x = 42`\n"
+            "- **Functions** — `def greet(name): return f'Hello, {name}'`\n"
+            "- **Classes** — `class Dog: def __init__(self, name): self.name = name`\n"
+            "- **Lists** — mutable sequences: `nums = [1, 2, 3]`\n"
+            "- **Dicts** — key-value pairs: `person = {'name': 'Alice', 'age': 30}`\n\n"
+            "```python\n# Quick example\nfor i in range(5):\n    print(f'Step {i}')\n```\n\n"
+            "> **Note:** The AI backend is currently unavailable (check Anthropic billing at console.anthropic.com). This is a built-in demo answer."
+        )
+
+    if any(w in q for w in ["async", "await", "coroutine", "asyncio", "event loop", "non-blocking"]):
+        return (
+            "## Async Programming in Python\n\n"
+            "Async lets you run **non-blocking I/O** in a single thread using `asyncio`.\n\n"
+            "```python\nimport asyncio\n\nasync def fetch(url):\n    # await pauses this coroutine without blocking the thread\n    await asyncio.sleep(1)\n    return f'Response from {url}'\n\nasync def main():\n    result = await fetch('https://api.example.com')\n    print(result)\n\nasyncio.run(main())\n```\n\n"
+            "**Use async for:** HTTP requests, DB queries, file I/O\n"
+            "**Avoid for:** CPU-heavy tasks (use `multiprocessing` instead)\n\n"
+            "> **Note:** The AI backend is temporarily unavailable (Anthropic billing needed). This is a built-in demo answer."
+        )
+
+    if any(w in q for w in ["machine learning", "ml", "model", "regression", "classification", "neural", "train", "supervised", "unsupervised"]):
+        return (
+            "## Machine Learning Basics\n\n"
+            "Machine learning teaches computers to learn patterns from data without being explicitly programmed.\n\n"
+            "### Main types\n"
+            "| Type | How it works | Example |\n"
+            "|------|--------------|---------|\n"
+            "| **Supervised** | Learns from labelled data | Spam detection |\n"
+            "| **Unsupervised** | Finds hidden structure | Customer clustering |\n"
+            "| **Reinforcement** | Learns by reward/penalty | Game-playing AI |\n\n"
+            "```python\nfrom sklearn.linear_model import LinearRegression\nmodel = LinearRegression()\nmodel.fit(X_train, y_train)\npredictions = model.predict(X_test)\n```\n\n"
+            "> **Note:** The AI backend is temporarily unavailable (Anthropic billing needed). This is a built-in demo answer."
+        )
+
+    if any(w in q for w in ["linear regression", "logistic", "gradient", "loss", "epoch", "weight", "bias", "feature"]):
+        return (
+            "## Linear Regression\n\n"
+            "Fits a line `y = β₀ + β₁x` by minimising the **Sum of Squared Residuals**.\n\n"
+            "```python\nfrom sklearn.linear_model import LinearRegression\nimport numpy as np\n\nX = np.array([[1],[2],[3],[4],[5]])\ny = np.array([2, 4, 5, 4, 5])\nmodel = LinearRegression().fit(X, y)\nprint(f'Slope: {model.coef_[0]:.2f}, Intercept: {model.intercept_:.2f}')\n```\n\n"
+            "**Key assumptions:** Linearity, independence, normality of residuals, homoscedasticity.\n\n"
+            "> **Note:** The AI backend is temporarily unavailable (Anthropic billing needed). This is a built-in demo answer."
+        )
+
+    # Generic fallback
+    return (
+        f"## Answer to: *{question[:80]}*\n\n"
+        "I can help you understand this topic! However, the AI backend is temporarily unavailable.\n\n"
+        "**To enable live AI answers:**\n"
+        "1. Go to **console.anthropic.com → Settings → Billing**\n"
+        "2. Add a payment method and purchase credits\n"
+        "3. The chatbot will automatically start giving real answers\n\n"
+        "In the meantime, try asking about:\n"
+        "- Python variables, functions, classes, loops\n"
+        "- Async programming with asyncio\n"
+        "- Machine learning concepts\n"
+        "- Linear regression and classification\n\n"
+        "> Built-in demo mode — real AI responses activate once billing is configured."
+    )
+
+LLM_GATEWAY_URL      = os.getenv("LLM_GATEWAY_URL",      "http://llm-gateway:8000")
+RAG_SERVICE_URL      = os.getenv("RAG_SERVICE_URL",      "http://rag-pipeline:8002")
+GRADER_SERVICE_URL   = os.getenv("GRADER_SERVICE_URL",   "http://confidence-grader:8006")
+ANALYTICS_SERVICE_URL = os.getenv("ANALYTICS_SERVICE_URL", "http://analytics:8011")
+LEARNER_PROFILE_URL  = os.getenv("LEARNER_PROFILE_URL",  "http://learner-profile:8008")
+
+SYSTEM_PROMPT = """You are an expert AI tutor. You help learners understand complex topics clearly and concisely.
+
+Guidelines:
+- Give accurate, well-structured answers using Markdown formatting
+- Use code examples when relevant (wrap in triple backticks with language tag)
+- Use bullet points and headers to organise longer answers
+- Cite the source document when you use retrieved context
+- If you don't know something, say so rather than making things up
+- Keep answers focused and educational
+"""
+
+
+# ── Domain types ──────────────────────────────────────────────────────────────
 
 @dataclass
 class Message:
@@ -25,6 +118,8 @@ class Session:
     title: str = "New Chat"
 
 
+# ── Protocols ─────────────────────────────────────────────────────────────────
+
 class SessionCache(Protocol):
     async def get(self, session_id: str) -> Session | None: ...
     async def set(self, session: Session) -> None: ...
@@ -35,6 +130,8 @@ class SessionRepository(Protocol):
     async def save_message(self, session_id: str, message: Message) -> None: ...
     async def get_history(self, session_id: str) -> list[Message]: ...
 
+
+# ── In-memory implementations ─────────────────────────────────────────────────
 
 class InMemorySessionCache:
     def __init__(self) -> None:
@@ -55,33 +152,89 @@ class MockSessionRepository:
         self.sessions[session.id] = session
 
     async def save_message(self, session_id: str, message: Message) -> None:
-        session = self.sessions.setdefault(session_id, Session(id=session_id, user_id=""))
-        session.messages.append(message)
+        s = self.sessions.setdefault(session_id, Session(id=session_id, user_id=""))
+        s.messages.append(message)
 
     async def get_history(self, session_id: str) -> list[Message]:
         return self.sessions.get(session_id, Session(id=session_id, user_id="")).messages
 
+
+# ── RAG retrieval (best-effort) ───────────────────────────────────────────────
+
+async def _fetch_rag_context(
+    query: str, knowledge_base_id: str | None, top_k: int = 5
+) -> list[dict]:
+    """Call the RAG pipeline to get relevant chunks. Returns [] on any failure."""
+    if not knowledge_base_id:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"{RAG_SERVICE_URL}/api/internal/rag/retrieve",
+                json={"query": query, "knowledge_base_id": knowledge_base_id, "top_k": top_k},
+            )
+            if resp.is_success:
+                data = resp.json()
+                return data.get("chunks", data.get("results", []))
+    except Exception as exc:
+        logger.debug("RAG retrieval skipped: %s", exc)
+    return []
+
+
+# ── Main service ──────────────────────────────────────────────────────────────
 
 class ChatOrchestratorService:
     def __init__(
         self,
         cache: SessionCache,
         repository: SessionRepository,
-        rag_url: str = "http://localhost:8010",
+        llm_gateway_url: str = LLM_GATEWAY_URL,
     ) -> None:
         self.cache = cache
         self.repository = repository
-        self.rag_url = rag_url
+        self.llm_gateway_url = llm_gateway_url.rstrip("/")
 
-    async def create_session(self, user_id: str, knowledge_base_id: str | None = None) -> Session:
-        session = Session(id=str(uuid.uuid4()), user_id=user_id, knowledge_base_id=knowledge_base_id)
+    async def create_session(
+        self, user_id: str, knowledge_base_id: str | None = None
+    ) -> Session:
+        session = Session(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            knowledge_base_id=knowledge_base_id,
+        )
         await self.cache.set(session)
         await self.repository.save_session(session)
+        # fire analytics (best-effort)
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    f"{ANALYTICS_SERVICE_URL}/api/v1/analytics/events",
+                    json={
+                        "event_type": "session.created",
+                        "user_id": user_id,
+                        "metadata": {"session_id": session.id, "knowledge_base_id": knowledge_base_id},
+                    },
+                )
+        except Exception:
+            pass
         return session
 
-    def build_prompt(self, session: Session, rag_context: str) -> str:
-        history = "\n".join(f"{m.role}: {m.content}" for m in session.messages[-10:])
-        return f"Context:\n{rag_context}\n\nHistory:\n{history}\n\nAssistant:"
+    def _build_llm_messages(
+        self, session: Session, user_message: str, rag_context: str
+    ) -> list[dict]:
+        """Build the messages list for the LLM gateway request."""
+        system_content = SYSTEM_PROMPT
+        if rag_context:
+            system_content += f"\n\n## Retrieved Context\n\n{rag_context}"
+
+        msgs: list[dict] = [{"role": "system", "content": system_content}]
+
+        # Include last 10 turns of history for context
+        for m in session.messages[-10:]:
+            msgs.append({"role": m.role, "content": m.content})
+
+        msgs.append({"role": "user", "content": user_message})
+        return msgs
 
     async def stream_response(
         self,
@@ -89,18 +242,144 @@ class ChatOrchestratorService:
         user_message: str,
         rag_chunks: list[dict] | None = None,
     ) -> AsyncIterator[str]:
+        """Stream a response from Claude via the LLM Gateway."""
+        # 1. Load/create session
         session = await self.cache.get(session_id)
         if not session:
             session = Session(id=session_id, user_id="unknown")
+
+        # 2. Fetch RAG context (use passed-in chunks first, then try live retrieval)
+        if rag_chunks is None:
+            rag_chunks = await _fetch_rag_context(user_message, session.knowledge_base_id)
+
+        rag_context = "\n\n".join(
+            c.get("chunk_text", c.get("text", c.get("content", "")))
+            for c in rag_chunks
+        )
+
+        sources = [
+            {
+                "chunk_id":       c.get("id", c.get("chunk_id", "")),
+                "document_title": c.get("document_title", c.get("title", "Source")),
+            }
+            for c in rag_chunks
+        ]
+
+        # 3. Record user message
         session.messages.append(Message(role="user", content=user_message))
-        context = "\n".join(c.get("text", "") for c in (rag_chunks or []))
-        prompt = self.build_prompt(session, context)
-        answer = f"Based on the provided context: {user_message[:50]}..."
-        sources = rag_chunks or []
-        for token in answer.split():
-            yield f"event: token\ndata: {json.dumps({'token': token + ' '})}\n\n"
-        yield f"event: sources\ndata: {json.dumps({'sources': sources})}\n\n"
-        yield f"event: done\ndata: {json.dumps({'message_id': str(uuid.uuid4())})}\n\n"
-        session.messages.append(Message(role="assistant", content=answer, sources=sources))
+        await self.cache.set(session)
+
+        # 4. Call LLM Gateway — streaming
+        llm_messages = self._build_llm_messages(session, user_message, rag_context)
+        full_answer = ""
+
+        llm_error = False
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.llm_gateway_url}/api/internal/llm/completions/stream",
+                    json={
+                        "messages":   llm_messages,
+                        "model_tier": "standard",
+                        "max_tokens": 2048,
+                        "temperature": 0.7,
+                    },
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        raw = line[len("data:"):].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                            # Gateway signals a provider error (e.g. 429, 401) via finish_reason
+                            if chunk.get("finish_reason") == "error":
+                                llm_error = True
+                                logger.warning("LLM gateway error chunk: %s", chunk.get("error", ""))
+                                break
+                            delta = chunk.get("delta", "")
+                            if delta:
+                                full_answer += delta
+                                yield (
+                                    f"event: token\n"
+                                    f"data: {json.dumps({'token': delta})}\n\n"
+                                )
+                        except json.JSONDecodeError:
+                            continue
+
+        except httpx.HTTPStatusError as exc:
+            logger.error("LLM Gateway returned %d: %s", exc.response.status_code, exc.response.text)
+            llm_error = True
+
+        except Exception as exc:
+            logger.error("LLM Gateway call failed: %s", exc)
+            llm_error = True
+
+        if llm_error:
+            fallback = _demo_answer(user_message)
+            full_answer = fallback
+            for token in fallback.split(" "):
+                yield f"event: token\ndata: {json.dumps({'token': token + ' '})}\n\n"
+            rag_chunks = []  # no document grounding for fallback answers
+
+        # 5. Call confidence grader
+        confidence_score = 0.8
+        source_type = "documents"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                grade_resp = await client.post(
+                    f"{GRADER_SERVICE_URL}/api/internal/grader/evaluate",
+                    json={"answer": full_answer, "chunks": rag_chunks},
+                )
+                if grade_resp.status_code == 200:
+                    grade_data = grade_resp.json()
+                    confidence_score = grade_data.get("confidence", 0.8)
+                    source_type      = grade_data.get("source_type", "documents")
+        except Exception:
+            pass
+
+        # Filter sources — only show chunks that actually grounded the answer
+        # (score >= 0.25); if none pass, mark as ai_knowledge
+        MIN_SOURCE_SCORE = 0.25
+        grounded_sources = [
+            s for s, c in zip(sources, rag_chunks)
+            if float(c.get("score", 0.0)) >= MIN_SOURCE_SCORE
+        ] if rag_chunks else []
+        if not grounded_sources:
+            source_type = "ai_knowledge"
+
+        # 6. Emit sources + done (with confidence + source_type)
+        yield f"event: sources\ndata: {json.dumps({'sources': grounded_sources, 'source_type': source_type})}\n\n"
+        message_id = str(uuid.uuid4())
+        yield f"event: done\ndata: {json.dumps({'message_id': message_id, 'confidence_score': confidence_score, 'source_type': source_type})}\n\n"
+
+        # 7. Persist assistant message
+        session.messages.append(
+            Message(role="assistant", content=full_answer, sources=grounded_sources)
+        )
         await self.cache.set(session)
         await self.repository.save_message(session_id, session.messages[-1])
+
+        # 8. Fire analytics event (best-effort, don't await)
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    f"{ANALYTICS_SERVICE_URL}/api/v1/analytics/events",
+                    json={
+                        "event_type": "query.submitted",
+                        "user_id": session.user_id,
+                        "topic": user_message[:80],
+                        "metadata": {
+                            "session_id": session_id,
+                            "knowledge_base_id": session.knowledge_base_id,
+                            "confidence": confidence_score,
+                            "source_type": source_type,
+                            "source_count": len(grounded_sources),
+                        },
+                    },
+                )
+        except Exception:
+            pass

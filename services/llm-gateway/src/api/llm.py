@@ -69,8 +69,21 @@ async def completions_stream(
             yield "data: [DONE]\n\n"
         except Exception as exc:
             logger.exception("Stream failed for request_id=%s", body.request_id)
-            error_payload = json.dumps({"error": str(exc), "request_id": body.request_id})
-            yield f"data: {error_payload}\n\n"
+            raw = str(exc)
+            lower = raw.lower()
+            if "credit balance" in lower or "credits" in lower or "billing" in lower:
+                msg = "⚠️ AI account has no credits. Go to **console.anthropic.com → Billing** to add credits, then retry."
+            elif "429" in raw:
+                msg = "⚠️ AI rate limit hit. Please wait a moment and try again."
+            elif "401" in raw or "403" in raw:
+                msg = "⚠️ API key is invalid or unauthorised. Check your `.env` file."
+            else:
+                msg = f"⚠️ AI service error: {raw[:120]}"
+            # Emit error as a delta token so the chat UI shows a message
+            fallback = json.dumps({"delta": msg, "finish_reason": "error",
+                                   "error": raw, "request_id": body.request_id})
+            yield f"data: {fallback}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -80,6 +93,30 @@ async def completions_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/embed")
+async def embed(
+    body: dict,
+    request: Request,
+) -> dict:
+    """Generate embeddings — always uses OpenAI (Anthropic has no embedding API)."""
+    texts: list[str] = body.get("texts", [])
+    model: str | None = body.get("model")
+    if not texts:
+        raise HTTPException(status_code=422, detail="'texts' list is required")
+    llm_router: LLMRouter = request.app.state.llm_router
+    try:
+        # Try primary first; fall back to OpenAI provider if primary doesn't support embeddings
+        try:
+            embeddings = await llm_router.primary.embed(texts, model)
+        except NotImplementedError:
+            from src.providers.openai_provider import OpenAIProvider
+            embeddings = await OpenAIProvider().embed(texts, model)
+        return {"embeddings": embeddings, "model": model or "text-embedding-ada-002"}
+    except Exception as exc:
+        logger.exception("Embed failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/health")

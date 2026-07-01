@@ -35,7 +35,14 @@ async def send_message(session_id: str, body: MessageRequest, request: Request):
         raise HTTPException(404, "Session not found")
 
     async def event_generator():
-        async for event in svc.stream_response(session_id, body.content, rag_chunks=[]):
+        # Pass knowledge_base_id override from message body if provided
+        kb_id = body.knowledge_base_id
+        if kb_id:
+            session = await svc.cache.get(session_id)
+            if session:
+                session.knowledge_base_id = kb_id
+                await svc.cache.set(session)
+        async for event in svc.stream_response(session_id, body.content, rag_chunks=None):
             yield {"event": event.split("\n")[0].replace("event: ", ""), "data": event.split("data: ", 1)[-1].strip()}
 
     return EventSourceResponse(event_generator())
