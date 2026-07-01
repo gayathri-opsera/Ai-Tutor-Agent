@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: chat-orchestrator
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-chat-orchestrator:dev-dd56058-20260701124353
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-chat-orchestrator:dev-aad8a7a-20260701130907
