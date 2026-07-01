@@ -323,7 +323,7 @@ jobs:
   argocd-sync:
     name: "08 - ArgoCD Hard Refresh and Sync"
     runs-on: ubuntu-latest
-    needs: [create-argocd-app]
+    needs: [refresh-ecr-secret]
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
