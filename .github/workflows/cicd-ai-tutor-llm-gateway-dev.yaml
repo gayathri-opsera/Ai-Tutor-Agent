@@ -292,6 +292,34 @@ jobs:
           version: 'v1.28.0'
       - name: Setup Hub Kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Refresh ArgoCD Repository Credentials
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -z "${GH_PAT}" ]; then
+            echo "❌ GH_PAT secret missing — ArgoCD cannot read private repo manifests"
+            exit 1
+          fi
+          REPO_SECRET_NAME="repo-$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')-${{ env.SERVICE }}"
+          REPO_URL="https://github.com/${{ github.repository }}.git"
+          kubectl delete secret "${REPO_SECRET_NAME}" -n argocd --ignore-not-found
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ${REPO_SECRET_NAME}
+            namespace: argocd
+            labels:
+              argocd.argoproj.io/secret-type: repository
+          type: Opaque
+          stringData:
+            type: git
+            url: ${REPO_URL}
+            password: ${GH_PAT}
+            username: git
+          EOF
+          echo "✅ Refreshed ArgoCD credentials for ${REPO_URL}"
+
       - name: ArgoCD Hard Refresh
         run: |
           kubectl patch app opsera-ai-tutor-dev -n argocd --type merge \
@@ -300,20 +328,32 @@ jobs:
       - name: Trigger Sync
         run: |
           kubectl patch app opsera-ai-tutor-dev -n argocd --type merge \
-            -p '{"operation":{"initiatedBy":{"username":"github-actions"},"sync":{"revision":"HEAD"}}}'
-      - name: Wait for Sync
+            -p '{"operation":{"initiatedBy":{"username":"github-actions"},"sync":{"revision":"main","prune":true}}}'
+      - name: Wait for Sync to Complete
         run: |
+          APP="opsera-ai-tutor-dev"
           for i in $(seq 1 60); do
-            PHASE=$(kubectl get app opsera-ai-tutor-dev -n argocd \
-              -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "Unknown")
-            HEALTH=$(kubectl get app opsera-ai-tutor-dev -n argocd \
-              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
-            echo "[${i}/60] Phase: ${PHASE}, Health: ${HEALTH}"
+            PHASE=$(kubectl get app ${APP} -n argocd               -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "Unknown")
+            HEALTH=$(kubectl get app ${APP} -n argocd               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+            echo "[$i/60] Health: ${HEALTH} | Phase: ${PHASE}"
             if [ "${PHASE}" = "Succeeded" ] && [ "${HEALTH}" = "Healthy" ]; then
-              echo "✅ Sync succeeded"; exit 0
+              echo "✅ ArgoCD sync succeeded — app is Healthy"
+              exit 0
+            fi
+            if [ "${PHASE}" = "Failed" ] || [ "${PHASE}" = "Error" ]; then
+              MSG=$(kubectl get app ${APP} -n argocd \
+                -o jsonpath='{.status.operationState.message}' 2>/dev/null || echo "")
+              echo "❌ ArgoCD sync failed: ${PHASE} — ${MSG}"
+              if echo "${MSG}" | grep -qi "repository not found"; then
+                echo "Fix: GH_PAT secret must have repo scope and be set in GitHub Actions secrets."
+              fi
+              kubectl get app ${APP} -n argocd -o yaml
+              exit 1
             fi
             sleep 10
           done
+          echo "⚠️ Sync poll timed out after 10 minutes"
+          kubectl get app ${APP} -n argocd -o yaml
           exit 1
 
   verify-deployment:
