@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: confidence-grader
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: confidence-grader
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: confidence-grader
+  template:
+    metadata:
+      labels:
+        app: confidence-grader
+        app.kubernetes.io/name: ai-tutor
+        app.kubernetes.io/component: confidence-grader
+    spec:
+      serviceAccountName: ai-tutor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: confidence-grader
+          image: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
+          ports:
+            - containerPort: 8006
+          envFrom:
+            - configMapRef:
+                name: ai-tutor-config
+            - secretRef:
+                name: ai-tutor-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8006
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8006
+            initialDelaySeconds: 30
+            periodSeconds: 30

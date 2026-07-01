@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-config
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: admin-config
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-config
+  template:
+    metadata:
+      labels:
+        app: admin-config
+        app.kubernetes.io/name: ai-tutor
+        app.kubernetes.io/component: admin-config
+    spec:
+      serviceAccountName: ai-tutor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: admin-config
+          image: PLACEHOLDER_ECR_URI_ADMIN_CONFIG
+          ports:
+            - containerPort: 8009
+          envFrom:
+            - configMapRef:
+                name: ai-tutor-config
+            - secretRef:
+                name: ai-tutor-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8009
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8009
+            initialDelaySeconds: 30
+            periodSeconds: 30

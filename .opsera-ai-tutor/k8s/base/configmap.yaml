@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-tutor-config
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    tenant: opsera
+data:
+  # LLM Provider defaults
+  DEFAULT_PROVIDER: "groq"
+  FALLBACK_PROVIDER: "openai"
+
+  # Kafka — sync mode avoids needing a real broker for dev
+  KAFKA_SYNC_MODE: "true"
+  KAFKA_ENABLED: "true"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+
+  # Vector DB
+  VECTOR_DB_BACKEND: "weaviate"
+
+  # Embedding
+  EMBEDDING_BACKEND: "sentence_transformers"
+
+  # RAG
+  RAG_TOP_K: "5"
+
+  # Confidence grader
+  CONFIDENCE_THRESHOLD: "0.6"
+
+  # Circuit breaker
+  CB_FAILURE_THRESHOLD: "5"
+  CB_ERROR_RATE_THRESHOLD: "0.5"
+  CB_WINDOW_SECONDS: "30"
+  CB_RECOVERY_TIMEOUT_SECONDS: "60"
+
+  # Auth — set to false once Keycloak is ready
+  AUTH_DISABLED: "false"
+  KEYCLOAK_REALM: "ai-tutor"
+  KEYCLOAK_CLIENT_ID: "ai-tutor-backend"
+  AZURE_OPENAI_DEPLOYMENT: "gpt-4o"
+  AZURE_OPENAI_API_VERSION: "2024-02-01"
+
+  # S3
+  S3_BUCKET: "ai-tutor-content"
+  S3_REGION: "us-east-1"
+
+  # Cache
+  CACHE_SIMILARITY_THRESHOLD: "0.92"
+  CACHE_TTL_SECONDS: "3600"
+
+  # Logging
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+
+  # Inter-service URLs (within same namespace, using short K8s DNS)
+  LLM_GATEWAY_URL: "http://llm-gateway:8000"
+  EMBEDDING_SERVICE_URL: "http://embedding-service:8001"
+  RAG_SERVICE_URL: "http://rag-pipeline:8002"
+  GRADER_SERVICE_URL: "http://confidence-grader:8006"
+  KEYCLOAK_URL: "http://keycloak:8080"
+  WEAVIATE_URL: "http://weaviate:8080"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  DB_PORT: "5432"
+  DB_NAME: "ai_tutor"
+  DB_USER: "ai_tutor"

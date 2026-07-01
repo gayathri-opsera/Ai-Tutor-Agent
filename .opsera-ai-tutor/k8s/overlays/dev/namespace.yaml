@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opsera-ai-tutor-dev
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    environment: dev
+    tenant: opsera

@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-tutor-role
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    tenant: opsera
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-tutor-rolebinding
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    tenant: opsera
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ai-tutor-role
+subjects:
+  - kind: ServiceAccount
+    name: ai-tutor

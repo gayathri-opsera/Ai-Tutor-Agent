@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assessment
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: assessment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: assessment
+  template:
+    metadata:
+      labels:
+        app: assessment
+        app.kubernetes.io/name: ai-tutor
+        app.kubernetes.io/component: assessment
+    spec:
+      serviceAccountName: ai-tutor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: assessment
+          image: PLACEHOLDER_ECR_URI_ASSESSMENT
+          ports:
+            - containerPort: 8010
+          envFrom:
+            - configMapRef:
+                name: ai-tutor-config
+            - secretRef:
+                name: ai-tutor-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8010
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8010
+            initialDelaySeconds: 30
+            periodSeconds: 30

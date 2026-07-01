@@ -1,0 +1,282 @@
+name: "00 - Bootstrap: AI Tutor Infrastructure"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to bootstrap'
+        required: true
+        type: choice
+        options: [dev, all]
+        default: dev
+
+env:
+  TENANT: opsera
+  APP_NAME: ai-tutor
+  AWS_REGION: us-west-2
+  HUB_CLUSTER: argocd-usw2
+  SPOKE_CLUSTER: opsera-usw2-np
+  ARGOCD_NAMESPACE: argocd
+
+jobs:
+  # 01 - Pre-flight Checks
+  preflight:
+    name: "01 - Pre-flight Checks"
+    runs-on: ubuntu-latest
+    outputs:
+      aws_account_id: ${{ steps.aws_info.outputs.account_id }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get AWS Account Info
+        id: aws_info
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${ACCOUNT_ID}" >> $GITHUB_OUTPUT
+          echo "AWS Account: ${ACCOUNT_ID}"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Check EKS Clusters
+        run: |
+          echo "Checking hub cluster: ${{ env.HUB_CLUSTER }}"
+          aws eks describe-cluster --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }} \
+            --query 'cluster.status' --output text || echo "⚠️ Hub cluster not found"
+
+          echo "Checking spoke cluster: ${{ env.SPOKE_CLUSTER }}"
+          aws eks describe-cluster --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }} \
+            --query 'cluster.status' --output text || echo "⚠️ Spoke cluster not found"
+
+      - name: Check Spoke Registration in ArgoCD
+        run: |
+          aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl get secret -n ${{ env.ARGOCD_NAMESPACE }} \
+            -l "argocd.argoproj.io/secret-type=cluster" --no-headers | grep ${{ env.SPOKE_CLUSTER }} \
+            && echo "✅ Spoke cluster registered" \
+            || echo "⚠️ Spoke cluster not yet registered in ArgoCD — will register in argocd-setup"
+
+  # 02 - ECR Repositories (idempotent — one per service)
+  ecr-setup:
+    name: "02 - ECR Repositories"
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create ECR Repositories (Idempotent)
+        run: |
+          REPOS=(
+            "opsera/ai-tutor-frontend"
+            "opsera/ai-tutor-llm-gateway"
+            "opsera/ai-tutor-embedding-service"
+            "opsera/ai-tutor-rag-pipeline"
+            "opsera/ai-tutor-content-ingestion"
+            "opsera/ai-tutor-chat-orchestrator"
+            "opsera/ai-tutor-agent-reasoning"
+            "opsera/ai-tutor-confidence-grader"
+            "opsera/ai-tutor-content-management"
+            "opsera/ai-tutor-learner-profile"
+            "opsera/ai-tutor-admin-config"
+            "opsera/ai-tutor-assessment"
+            "opsera/ai-tutor-analytics"
+            "opsera/ai-tutor-audit"
+          )
+
+          for REPO in "${REPOS[@]}"; do
+            aws ecr describe-repositories --repository-names "$REPO" \
+              --region ${{ env.AWS_REGION }} &>/dev/null \
+              && echo "✅ ECR repo exists: ${REPO}" \
+              || (aws ecr create-repository \
+                    --repository-name "$REPO" \
+                    --image-scanning-configuration scanOnPush=true \
+                    --region ${{ env.AWS_REGION }} && echo "✅ Created ECR repo: ${REPO}")
+          done
+
+  # 03 - ArgoCD Configuration
+  argocd-setup:
+    name: "03 - ArgoCD Configuration"
+    needs: [preflight, ecr-setup]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Connect to Hub Cluster
+        run: |
+          aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl cluster-info
+
+      - name: Register Spoke Cluster in ArgoCD (Idempotent)
+        run: |
+          SPOKE_ARN=$(aws eks describe-cluster --name ${{ env.SPOKE_CLUSTER }} \
+            --region ${{ env.AWS_REGION }} --query 'cluster.arn' --output text)
+
+          # Check if already registered
+          if kubectl get secret -n ${{ env.ARGOCD_NAMESPACE }} \
+              -l "argocd.argoproj.io/secret-type=cluster" -o json \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); \
+                exit(0 if any('${{ env.SPOKE_CLUSTER }}' in str(s.get('metadata',{}).get('name','')) \
+                for s in d['items']) else 1)" 2>/dev/null; then
+            echo "✅ Spoke cluster already registered"
+          else
+            echo "Registering spoke cluster..."
+            SPOKE_ENDPOINT=$(aws eks describe-cluster --name ${{ env.SPOKE_CLUSTER }} \
+              --region ${{ env.AWS_REGION }} --query 'cluster.endpoint' --output text)
+            SPOKE_CA=$(aws eks describe-cluster --name ${{ env.SPOKE_CLUSTER }} \
+              --region ${{ env.AWS_REGION }} \
+              --query 'cluster.certificateAuthority.data' --output text)
+
+            kubectl create secret generic ${{ env.SPOKE_CLUSTER }} \
+              --namespace=${{ env.ARGOCD_NAMESPACE }} \
+              --from-literal=name=${{ env.SPOKE_CLUSTER }} \
+              --from-literal=server="${SPOKE_ENDPOINT}" \
+              --from-literal=config="{\"tlsClientConfig\":{\"caData\":\"${SPOKE_CA}\",\"insecure\":false}}" \
+              --dry-run=client -o yaml | \
+              kubectl label --local -f - "argocd.argoproj.io/secret-type=cluster" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "✅ Spoke cluster registered"
+          fi
+
+      - name: Setup ArgoCD Repository Secret (Idempotent)
+        run: |
+          kubectl create secret generic ai-tutor-repo \
+            --namespace=${{ env.ARGOCD_NAMESPACE }} \
+            --from-literal=type=git \
+            --from-literal=url=https://github.com/gayathri-opsera/Ai-Tutor-Agent.git \
+            --from-literal=username=oauth2 \
+            --from-literal=password=${{ secrets.GITHUB_TOKEN }} \
+            --dry-run=client -o yaml | \
+            kubectl annotate --local -f - \
+            "argocd.argoproj.io/secret-type=repository" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ ArgoCD repo secret created/updated"
+
+  # 04 - Kubernetes Setup (namespaces + base RBAC)
+  k8s-setup:
+    name: "04 - Kubernetes Setup"
+    needs: [preflight, argocd-setup]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Connect to Spoke Cluster
+        run: |
+          aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Setup Namespace (Idempotent)
+        run: |
+          kubectl apply -f .opsera-ai-tutor/k8s/overlays/dev/namespace.yaml
+          echo "✅ Namespace opsera-ai-tutor-dev ready"
+
+      - name: Create App Secrets from GitHub Secrets (Idempotent)
+        run: |
+          NAMESPACE="opsera-ai-tutor-dev"
+          kubectl create secret generic ai-tutor-secrets \
+            --namespace="${NAMESPACE}" \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            --from-literal=GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}" \
+            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
+            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=REDIS_URL="${{ secrets.REDIS_URL }}" \
+            --from-literal=WEAVIATE_URL="${{ secrets.WEAVIATE_URL }}" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --from-literal=KEYCLOAK_CLIENT_SECRET="${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
+            --from-literal=KEYCLOAK_ADMIN_PASSWORD="${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}" \
+            --from-literal=S3_ACCESS_KEY="${{ secrets.S3_ACCESS_KEY }}" \
+            --from-literal=S3_SECRET_KEY="${{ secrets.S3_SECRET_KEY }}" \
+            --from-literal=S3_ENDPOINT="${{ secrets.S3_ENDPOINT }}" \
+            --from-literal=AZURE_OPENAI_API_KEY="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+            --from-literal=AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ ai-tutor-secrets created/updated in ${NAMESPACE}"
+
+      - name: Setup ArgoCD Application (Idempotent)
+        run: |
+          aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl apply -f .opsera-ai-tutor/argocd/dev/application.yaml
+          echo "✅ ArgoCD application opsera-ai-tutor-dev created/updated"
+
+  # 05 - Verification
+  verify:
+    name: "05 - Verification"
+    needs: [preflight, ecr-setup, argocd-setup, k8s-setup]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Verify All Components
+        run: |
+          echo "=== ECR Repositories ==="
+          aws ecr describe-repositories --region ${{ env.AWS_REGION }} \
+            --query 'repositories[?contains(repositoryName, `ai-tutor`)].repositoryName' \
+            --output table
+
+          echo "=== ArgoCD Application ==="
+          aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl get application opsera-ai-tutor-dev -n argocd -o wide 2>/dev/null \
+            || echo "⚠️ ArgoCD app not yet visible (may take a few seconds)"
+
+          echo "=== Namespace ==="
+          aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+          kubectl get namespace opsera-ai-tutor-dev
+
+          echo "=== Secrets ==="
+          kubectl get secret ai-tutor-secrets -n opsera-ai-tutor-dev \
+            -o jsonpath='{.metadata.name}' && echo " ✅ ai-tutor-secrets exists"
+
+          echo ""
+          echo "✅ Bootstrap complete — CI/CD pipelines can now deploy to opsera-ai-tutor-dev"
+          echo "Next step: Push code to main to trigger individual service CI/CD workflows"

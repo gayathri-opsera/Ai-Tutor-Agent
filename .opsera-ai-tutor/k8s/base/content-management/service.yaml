@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: content-management
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: content-management
+spec:
+  selector:
+    app: content-management
+  ports:
+    - name: http
+      port: 8007
+      targetPort: 8007
+  type: ClusterIP

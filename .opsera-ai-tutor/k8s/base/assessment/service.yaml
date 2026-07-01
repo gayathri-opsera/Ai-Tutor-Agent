@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: assessment
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: assessment
+spec:
+  selector:
+    app: assessment
+  ports:
+    - name: http
+      port: 8010
+      targetPort: 8010
+  type: ClusterIP

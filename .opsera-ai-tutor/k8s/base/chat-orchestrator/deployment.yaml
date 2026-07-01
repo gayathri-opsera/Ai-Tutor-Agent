@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-orchestrator
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: chat-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-orchestrator
+  template:
+    metadata:
+      labels:
+        app: chat-orchestrator
+        app.kubernetes.io/name: ai-tutor
+        app.kubernetes.io/component: chat-orchestrator
+    spec:
+      serviceAccountName: ai-tutor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: chat-orchestrator
+          image: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
+          ports:
+            - containerPort: 8004
+          envFrom:
+            - configMapRef:
+                name: ai-tutor-config
+            - secretRef:
+                name: ai-tutor-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 30
+            periodSeconds: 30

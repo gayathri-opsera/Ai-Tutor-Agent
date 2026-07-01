@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: confidence-grader
+  labels:
+    app.kubernetes.io/name: ai-tutor
+    app.kubernetes.io/component: confidence-grader
+spec:
+  selector:
+    app: confidence-grader
+  ports:
+    - name: http
+      port: 8006
+      targetPort: 8006
+  type: ClusterIP

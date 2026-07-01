@@ -1,0 +1,89 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: opsera-ai-tutor-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - ingress.yaml
+
+labels:
+  - pairs:
+      environment: dev
+      tenant: opsera
+    includeSelectors: false
+
+replicas:
+  - name: frontend
+    count: 1
+  - name: llm-gateway
+    count: 1
+  - name: embedding-service
+    count: 1
+  - name: rag-pipeline
+    count: 1
+  - name: content-ingestion
+    count: 1
+  - name: chat-orchestrator
+    count: 1
+  - name: agent-reasoning
+    count: 1
+  - name: confidence-grader
+    count: 1
+  - name: content-management
+    count: 1
+  - name: learner-profile
+    count: 1
+  - name: admin-config
+    count: 1
+  - name: assessment
+    count: 1
+  - name: analytics
+    count: 1
+  - name: audit
+    count: 1
+
+images:
+  - name: PLACEHOLDER_ECR_URI_FRONTEND
+    newName: PLACEHOLDER_ECR_URI_FRONTEND
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_LLM_GATEWAY
+    newName: PLACEHOLDER_ECR_URI_LLM_GATEWAY
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
+    newName: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_RAG_PIPELINE
+    newName: PLACEHOLDER_ECR_URI_RAG_PIPELINE
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_CONTENT_INGESTION
+    newName: PLACEHOLDER_ECR_URI_CONTENT_INGESTION
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
+    newName: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_AGENT_REASONING
+    newName: PLACEHOLDER_ECR_URI_AGENT_REASONING
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
+    newName: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT
+    newName: PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_LEARNER_PROFILE
+    newName: PLACEHOLDER_ECR_URI_LEARNER_PROFILE
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_ADMIN_CONFIG
+    newName: PLACEHOLDER_ECR_URI_ADMIN_CONFIG
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_ASSESSMENT
+    newName: PLACEHOLDER_ECR_URI_ASSESSMENT
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_ANALYTICS
+    newName: PLACEHOLDER_ECR_URI_ANALYTICS
+    newTag: v1.0.0
+  - name: PLACEHOLDER_ECR_URI_AUDIT
+    newName: PLACEHOLDER_ECR_URI_AUDIT
+    newTag: v1.0.0

@@ -1,0 +1,354 @@
+name: "CI/CD - ai-tutor content-management (dev)"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - services/content-management/**
+      - Dockerfile.service
+      - .github/workflows/cicd-ai-tutor-content-management-dev.yaml
+
+env:
+  TENANT: opsera
+  APP_NAME: ai-tutor
+  SERVICE: content-management
+  SERVICE_ARG: content_management
+  PORT: "8007"
+  AWS_REGION: us-west-2
+  HUB_CLUSTER: argocd-usw2
+  SPOKE_CLUSTER: opsera-usw2-np
+  NAMESPACE: opsera-ai-tutor-dev
+  ECR_REPO: opsera/ai-tutor-content-management
+  PLACEHOLDER_KEY: PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT
+
+jobs:
+  security-scan:
+    name: "01 - Security Scan"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  build-image:
+    name: "02 - Build Image"
+    runs-on: ubuntu-latest
+    needs: [security-scan]
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+      ecr_uri: ${{ steps.ecr.outputs.uri }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Generate Image Tag
+        id: tag
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          echo "tag=dev-${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get ECR URI
+        id: ecr
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "uri=${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -f Dockerfile.service \
+            --build-arg SERVICE=content-management \
+            --build-arg PORT=8007 \
+            -t ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
+            .
+
+      - name: Save Image Artifact
+        run: |
+          docker save ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
+            -o /tmp/content-management-image.tar
+
+      - name: Upload Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-management-image
+          path: /tmp/content-management-image.tar
+          retention-days: 1
+
+  grype-scan:
+    name: "03 - Grype Vulnerability Scan"
+    runs-on: ubuntu-latest
+    needs: [build-image]
+    continue-on-error: true
+    steps:
+      - name: Download Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: content-management-image
+          path: /tmp
+      - name: Load Image
+        run: docker load -i /tmp/content-management-image.tar
+      - name: Run Grype Scan
+        uses: anchore/scan-action@v3
+        with:
+          image: ${{ needs.build-image.outputs.ecr_uri }}:${{ needs.build-image.outputs.image_tag }}
+          fail-build: false
+          severity-cutoff: critical
+          output-format: sarif
+        id: scan
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+        continue-on-error: true
+
+  push-to-ecr:
+    name: "04 - Push to ECR"
+    runs-on: ubuntu-latest
+    needs: [build-image, grype-scan]
+    if: always() && needs.build-image.result == 'success'
+    steps:
+      - name: Download Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: content-management-image
+          path: /tmp
+      - name: Load Image
+        run: docker load -i /tmp/content-management-image.tar
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Push to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin \
+            "${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          docker push ${{ needs.build-image.outputs.ecr_uri }}:${{ needs.build-image.outputs.image_tag }}
+          echo "✅ Pushed ${{ needs.build-image.outputs.image_tag }}"
+
+  update-manifests:
+    name: "05 - Update Manifests"
+    runs-on: ubuntu-latest
+    needs: [build-image, push-to-ecr]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Update Kustomization Image Tag
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_URI="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}"
+          IMAGE_TAG="${{ needs.build-image.outputs.image_tag }}"
+          OVERLAY=".opsera-ai-tutor/k8s/overlays/dev/kustomization.yaml"
+          PLACEHOLDER="${{ env.PLACEHOLDER_KEY }}"
+
+          python3 - <<PYEOF2
+          import re
+          with open("${OVERLAY}", "r") as f:
+              content = f.read()
+          content = re.sub(
+              r'(- name: ${PLACEHOLDER}\n\s+newName: ).*',
+              r'\g<1>${ECR_URI}',
+              content
+          )
+          content = re.sub(
+              r'(- name: ${PLACEHOLDER}\n\s+newName: .*\n\s+newTag: ).*',
+              r'\g<1>${IMAGE_TAG}',
+              content
+          )
+          with open("${OVERLAY}", "w") as f:
+              f.write(content)
+          print(f"✅ Updated ${PLACEHOLDER} -> ${ECR_URI}:${IMAGE_TAG}")
+          PYEOF2
+
+      - name: Validate Kustomize Build
+        run: |
+          kubectl kustomize .opsera-ai-tutor/k8s/overlays/dev > /dev/null \
+            && echo "✅ Kustomize validation passed" \
+            || (echo "❌ Kustomize build failed"; exit 1)
+
+      - name: Commit and Push Manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add .opsera-ai-tutor/k8s/overlays/dev/kustomization.yaml
+          git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>" -m "chore(deploy): update content-management to ${{ needs.build-image.outputs.image_tag }} [skip ci]"
+          for i in 1 2 3; do
+            if git push origin main; then exit 0; fi
+            if ! git pull --rebase origin main; then
+              git rebase --abort || true
+              git pull --no-rebase origin main
+            fi
+            sleep 3
+          done
+          exit 1
+
+  create-argocd-app:
+    name: "06 - Create ArgoCD Application"
+    runs-on: ubuntu-latest
+    needs: [update-manifests]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      - name: Setup Hub Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Apply ArgoCD Application
+        run: |
+          kubectl apply -f .opsera-ai-tutor/argocd/dev/application.yaml
+          echo "✅ ArgoCD application opsera-ai-tutor-dev created/updated"
+
+  refresh-ecr-secret:
+    name: "07 - Refresh ECR Secret"
+    runs-on: ubuntu-latest
+    needs: [create-argocd-app]
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      - name: Setup Spoke Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Refresh ECR Image Pull Secret
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          kubectl create secret docker-registry ecr-registry-secret \
+            --namespace=${{ env.NAMESPACE }} \
+            --docker-server="${ECR_REGISTRY}" \
+            --docker-username=AWS \
+            --docker-password="$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ ECR pull secret refreshed"
+
+  argocd-sync:
+    name: "08 - ArgoCD Sync"
+    runs-on: ubuntu-latest
+    needs: [create-argocd-app]
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      - name: Setup Hub Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: ArgoCD Hard Refresh
+        run: |
+          kubectl patch app opsera-ai-tutor-dev -n argocd --type merge \
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+          sleep 5
+      - name: Trigger Sync
+        run: |
+          kubectl patch app opsera-ai-tutor-dev -n argocd --type merge \
+            -p '{"operation":{"initiatedBy":{"username":"github-actions"},"sync":{"revision":"HEAD"}}}'
+      - name: Wait for Sync
+        run: |
+          for i in $(seq 1 60); do
+            PHASE=$(kubectl get app opsera-ai-tutor-dev -n argocd \
+              -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "Unknown")
+            HEALTH=$(kubectl get app opsera-ai-tutor-dev -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+            echo "[${i}/60] Phase: ${PHASE}, Health: ${HEALTH}"
+            if [ "${PHASE}" = "Succeeded" ] && [ "${HEALTH}" = "Healthy" ]; then
+              echo "✅ Sync succeeded"; exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+
+  verify-deployment:
+    name: "09 - Verify Deployment"
+    runs-on: ubuntu-latest
+    needs: [refresh-ecr-secret, argocd-sync]
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+      - name: Setup Spoke Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Wait for Deployment
+        run: |
+          for i in $(seq 1 60); do
+            kubectl get deployment content-management -n ${{ env.NAMESPACE }} &>/dev/null && break
+            echo "⏳ Waiting... (${i}/60)"; sleep 5
+          done
+      - name: Verify Ready
+        run: |
+          kubectl wait --for=condition=available --timeout=300s \
+            deployment/content-management -n ${{ env.NAMESPACE }}
+          RUNNING=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=content-management \
+            --field-selector=status.phase=Running -o name | wc -l)
+          echo "✅ ${RUNNING} pod(s) running for content-management"
+
+  deployment-landscape:
+    name: "10 - Deployment Landscape"
+    runs-on: ubuntu-latest
+    needs: [verify-deployment]
+    if: success()
+    steps:
+      - name: Summary
+        run: |
+          echo "==========================================="
+          echo " DEPLOYED: ai-tutor / content-management / dev"
+          echo " Tag: ${{ needs.build-image.outputs.image_tag }}"
+          echo " Namespace: opsera-ai-tutor-dev"
+          echo " Port: 8007"
+          echo "==========================================="
