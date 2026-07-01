@@ -61,8 +61,8 @@ images:
     newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-ingestion
     newTag: dev-af80b3e-20260701122929
   - name: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
-    newName: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-chat-orchestrator
+    newTag: dev-af80b3e-20260701122958
   - name: PLACEHOLDER_ECR_URI_AGENT_REASONING
     newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-agent-reasoning
     newTag: dev-af80b3e-20260701122929
