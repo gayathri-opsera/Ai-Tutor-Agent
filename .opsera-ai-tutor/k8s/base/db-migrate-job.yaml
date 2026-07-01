@@ -26,13 +26,13 @@ spec:
               psql -h postgres -U ai_tutor -d ai_tutor <<'ENDSQL'
               CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-              DO $$ BEGIN
+              DO \$\$ BEGIN
                 CREATE TYPE content_type_enum AS ENUM ('pdf','docx','mp4','mp3','wav','url','text');
-              EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
 
-              DO $$ BEGIN
+              DO \$\$ BEGIN
                 CREATE TYPE document_status_enum AS ENUM ('active','retired','processing','failed');
-              EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
 
               CREATE TABLE IF NOT EXISTS knowledge_bases (
                 id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
