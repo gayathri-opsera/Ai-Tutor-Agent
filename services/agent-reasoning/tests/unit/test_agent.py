@@ -32,6 +32,10 @@ async def test_web_search_fallback():
 @pytest.mark.asyncio
 async def test_reason_api():
     app = create_app()
+    # ASGITransport does not trigger the lifespan, so inject the agent directly
+    async def _mock_retriever(q, **_):
+        return [{"text": f"info about {q}", "score": 0.8}]
+    app.state.react_agent = ReActAgent(retriever=_mock_retriever)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post("/api/internal/agent/reason", json={"query": "What is AI?"})
     assert resp.status_code == 200

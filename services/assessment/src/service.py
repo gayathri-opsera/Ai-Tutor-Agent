@@ -4,9 +4,16 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from enum import Enum
 from typing import Any
 
 import asyncpg
+
+
+class AssessmentType(str, Enum):
+    PRE = "pre"
+    POST = "post"
+    QUIZ = "quiz"
 
 DB_DSN = os.getenv(
     "DATABASE_URL",

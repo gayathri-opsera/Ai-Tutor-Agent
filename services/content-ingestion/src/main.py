@@ -31,11 +31,19 @@ async def lifespan(app: FastAPI):
     await pool.close()
 
 
-app = FastAPI(title="Content Ingestion", version="1.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-app.include_router(content_router)
+def create_app(ingestion_service=None) -> FastAPI:
+    """Factory used in tests to inject a mock ingestion service."""
+    _app = FastAPI(title="Content Ingestion", version="1.0.0", lifespan=lifespan)
+    _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    _app.include_router(content_router)
+    if ingestion_service is not None:
+        _app.state.ingestion_service = ingestion_service
+
+    @_app.get("/health")
+    async def health():
+        return {"status": "healthy"}
+
+    return _app
 
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+app = create_app()

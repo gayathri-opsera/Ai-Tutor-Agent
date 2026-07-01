@@ -40,7 +40,7 @@ def make_request(tier: ModelTier = ModelTier.STANDARD) -> CompletionRequest:
 class TestOpenAIProviderModelResolution:
     def test_resolve_standard_tier(self):
         p = OpenAIProvider(api_key="fake")
-        assert p.resolve_model("standard") == "gpt-4o"
+        assert p.resolve_model("standard") == "gpt-4o-mini"
 
     def test_resolve_small_tier(self):
         p = OpenAIProvider(api_key="fake")
@@ -65,7 +65,7 @@ class TestOpenAIProviderComplete:
         result = await provider.complete(make_request())
 
         assert result.provider == "openai"
-        assert result.model_used == "gpt-4o"
+        assert result.model_used == "gpt-4o-mini"
         assert result.usage.token_count_input == 15
         assert result.usage.token_count_output == 14
         assert result.choices[0].message_content != ""

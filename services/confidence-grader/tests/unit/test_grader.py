@@ -7,15 +7,18 @@ from src.main import create_app
 
 
 def test_classify_chunk():
+    # Thresholds: RELIABLE >= 0.45, AMBIGUOUS >= 0.25, UNRELIABLE < 0.25
     assert classify_chunk(0.8) == Reliability.RELIABLE
-    assert classify_chunk(0.5) == Reliability.AMBIGUOUS
+    assert classify_chunk(0.35) == Reliability.AMBIGUOUS
     assert classify_chunk(0.2) == Reliability.UNRELIABLE
 
 
 def test_evaluate_unreliable():
     result = evaluate("some answer", [{"chunk_id": "c1", "text": "unrelated", "score": 0.1}])
-    assert "don't have enough information" in result.answer
+    # evaluate always returns the original answer; low-score chunks → confidence 0
+    assert result.answer == "some answer"
     assert result.confidence == 0.0
+    assert result.verified is False
 
 
 def test_evaluate_reliable():

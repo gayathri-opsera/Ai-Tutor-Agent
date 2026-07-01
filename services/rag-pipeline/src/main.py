@@ -95,16 +95,18 @@ async def lifespan(app: FastAPI):
     await pool.close()
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="RAG Pipeline", version="1.0.0", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-    app.include_router(rag_router)
+def create_app(rag_service=None) -> FastAPI:
+    _app = FastAPI(title="RAG Pipeline", version="1.0.0", lifespan=lifespan)
+    _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    _app.include_router(rag_router)
+    if rag_service is not None:
+        _app.state.rag_service = rag_service
 
-    @app.get("/health")
+    @_app.get("/health")
     async def health():
         return {"status": "healthy"}
 
-    return app
+    return _app
 
 
 app = create_app()

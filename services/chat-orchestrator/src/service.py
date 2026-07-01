@@ -219,6 +219,18 @@ class ChatOrchestratorService:
             pass
         return session
 
+    def build_prompt(self, session: Session, rag_context: str) -> str:
+        """Return a single string prompt combining history and RAG context (used in tests)."""
+        last_user = next(
+            (m.content for m in reversed(session.messages) if m.role == "user"), ""
+        )
+        parts = []
+        if rag_context:
+            parts.append(f"Context:\n{rag_context}")
+        if last_user:
+            parts.append(f"Question: {last_user}")
+        return "\n\n".join(parts)
+
     def _build_llm_messages(
         self, session: Session, user_message: str, rag_context: str
     ) -> list[dict]:

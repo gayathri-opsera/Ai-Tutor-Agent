@@ -58,6 +58,84 @@ spec:
               );
               CREATE INDEX IF NOT EXISTS ix_documents_kb_active
                 ON documents(knowledge_base_id, is_active);
+
+              -- local_learner_profiles
+              CREATE TABLE IF NOT EXISTS local_learner_profiles (
+                user_id TEXT PRIMARY KEY,
+                display_name TEXT DEFAULT '',
+                proficiency_level TEXT DEFAULT 'beginner',
+                preferences JSONB DEFAULT '{}',
+                total_sessions INTEGER DEFAULT 0,
+                total_queries INTEGER DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+              );
+              CREATE TABLE IF NOT EXISTS local_topic_progress (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES local_learner_profiles(user_id) ON DELETE CASCADE,
+                topic TEXT NOT NULL,
+                knowledge_base_id TEXT,
+                status TEXT DEFAULT 'not_started',
+                score FLOAT DEFAULT 0.0,
+                question_count INTEGER DEFAULT 0,
+                updated_at TIMESTAMPTZ DEFAULT now()
+              );
+              CREATE UNIQUE INDEX IF NOT EXISTS ix_local_topic_user_topic ON local_topic_progress(user_id, topic);
+              CREATE INDEX IF NOT EXISTS ix_local_topic_user ON local_topic_progress(user_id);
+
+              -- local_assessments
+              CREATE TABLE IF NOT EXISTS local_assessments (
+                id TEXT PRIMARY KEY,
+                knowledge_base_id TEXT DEFAULT '',
+                title TEXT NOT NULL,
+                assessment_type TEXT DEFAULT 'pre',
+                questions_json JSONB DEFAULT '[]',
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+              );
+              CREATE INDEX IF NOT EXISTS ix_local_assessments_kb ON local_assessments(knowledge_base_id);
+              CREATE TABLE IF NOT EXISTS local_assessment_results (
+                id TEXT PRIMARY KEY,
+                assessment_id TEXT NOT NULL REFERENCES local_assessments(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL,
+                score FLOAT DEFAULT 0.0,
+                correct INTEGER DEFAULT 0,
+                total INTEGER DEFAULT 0,
+                answers_json JSONB DEFAULT '{}',
+                submitted_at TIMESTAMPTZ DEFAULT now()
+              );
+              CREATE INDEX IF NOT EXISTS ix_local_results_user ON local_assessment_results(user_id);
+
+              -- local_admin_config
+              CREATE TABLE IF NOT EXISTS local_admin_config (
+                org_id TEXT NOT NULL,
+                config_key TEXT NOT NULL,
+                config_value JSONB NOT NULL DEFAULT 'null',
+                description TEXT DEFAULT '',
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (org_id, config_key)
+              );
+              CREATE INDEX IF NOT EXISTS ix_local_admin_config_org ON local_admin_config(org_id);
+              INSERT INTO local_admin_config (org_id, config_key, config_value, description) VALUES
+                ('default', 'confidence_threshold', '0.4', 'Minimum confidence score to show answer'),
+                ('default', 'max_rag_chunks', '5', 'Max RAG chunks per query'),
+                ('default', 'session_ttl_minutes', '60', 'Session expiry in minutes'),
+                ('default', 'default_model_tier', '"standard"', 'LLM model tier: small | standard | large'),
+                ('default', 'data_retention_days', '90', 'Days to retain chat history')
+              ON CONFLICT DO NOTHING;
+
+              -- local_analytics_events
+              CREATE TABLE IF NOT EXISTS local_analytics_events (
+                id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                user_id TEXT DEFAULT '',
+                topic TEXT DEFAULT '',
+                rating INTEGER,
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT now()
+              );
+              CREATE INDEX IF NOT EXISTS ix_local_analytics_type ON local_analytics_events(event_type);
+              CREATE INDEX IF NOT EXISTS ix_local_analytics_user ON local_analytics_events(user_id);
               ENDSQL
           resources:
             requests:

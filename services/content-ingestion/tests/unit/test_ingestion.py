@@ -55,8 +55,21 @@ async def test_url_ingestion():
 
 @pytest.mark.asyncio
 async def test_upload_api():
-    app = create_app()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    from unittest.mock import AsyncMock, MagicMock
+    from src.service import ContentIngestionService
+
+    # Minimal pool mock — execute is a no-op, all state lives in the in-memory store
+    class _MockPool:
+        def acquire(self): return self
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
+        async def execute(self, *_a, **_kw): pass
+
+    store: dict = {}
+    svc = ContentIngestionService(pool=_MockPool(), store=store)
+    test_app = create_app(ingestion_service=svc)
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/content/upload",
             data={"knowledge_base_id": "kb-1"},
@@ -64,6 +77,7 @@ async def test_upload_api():
         )
     assert resp.status_code == 202
     doc_id = resp.json()["id"]
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
         status = await client.get(f"/api/v1/content/{doc_id}/status")
     assert status.status_code == 200
