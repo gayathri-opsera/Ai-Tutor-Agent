@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: embedding-service
-          image: PLACEHOLDER_EMBEDDING_SERVICE_ECR:v1.0.0
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-embedding-service:dev-dd56058-20260701124502
