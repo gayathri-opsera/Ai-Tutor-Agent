@@ -85,5 +85,5 @@ images:
     newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-analytics
     newTag: dev-af80b3e-20260701122928
   - name: PLACEHOLDER_ECR_URI_AUDIT
-    newName: PLACEHOLDER_ECR_URI_AUDIT
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-audit
+    newTag: dev-af80b3e-20260701122932
