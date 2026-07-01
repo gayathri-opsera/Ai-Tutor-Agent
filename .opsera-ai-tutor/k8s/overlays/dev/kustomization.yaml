@@ -76,8 +76,8 @@ images:
     newName: PLACEHOLDER_ECR_URI_LEARNER_PROFILE
     newTag: v1.0.0
   - name: PLACEHOLDER_ECR_URI_ADMIN_CONFIG
-    newName: PLACEHOLDER_ECR_URI_ADMIN_CONFIG
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-admin-config
+    newTag: dev-af80b3e-20260701122928
   - name: PLACEHOLDER_ECR_URI_ASSESSMENT
     newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-assessment
     newTag: dev-af80b3e-20260701122926
