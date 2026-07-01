@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: confidence-grader
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-confidence-grader:dev-af80b3e-20260701122932
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-confidence-grader:dev-dd56058-20260701124356
