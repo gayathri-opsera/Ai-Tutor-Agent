@@ -172,7 +172,7 @@ jobs:
             --from-literal=type=git \
             --from-literal=url=https://github.com/gayathri-opsera/Ai-Tutor-Agent.git \
             --from-literal=username=oauth2 \
-            --from-literal=password=${{ secrets.GITHUB_TOKEN }} \
+            --from-literal=password=${{ secrets.GH_PAT }} \
             --dry-run=client -o yaml | \
             kubectl annotate --local -f - \
             "argocd.argoproj.io/secret-type=repository" \

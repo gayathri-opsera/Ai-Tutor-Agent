@@ -152,7 +152,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
