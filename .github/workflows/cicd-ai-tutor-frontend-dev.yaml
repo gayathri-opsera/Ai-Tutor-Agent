@@ -207,21 +207,20 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           ECR_URI="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}"
           IMAGE_TAG="${{ needs.build-image.outputs.image_tag }}"
-          PATCH_FILE=".opsera-ai-tutor/k8s/overlays/dev/${{ env.SERVICE }}-image.yaml"
+          SVC="${{ env.SERVICE }}"
+          PATCH_FILE=".opsera-ai-tutor/k8s/overlays/dev/${SVC}-image.yaml"
 
-          # Each service writes ONLY its own file — no shared file, no conflicts
-          cat > "${PATCH_FILE}" <<YAML
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ${{ env.SERVICE }}
-spec:
-  template:
-    spec:
-      containers:
-        - name: ${{ env.SERVICE }}
-          image: ${ECR_URI}:${IMAGE_TAG}
-YAML
+          echo "apiVersion: apps/v1"                           >  "${PATCH_FILE}"
+          echo "kind: Deployment"                              >> "${PATCH_FILE}"
+          echo "metadata:"                                     >> "${PATCH_FILE}"
+          echo "  name: ${SVC}"                               >> "${PATCH_FILE}"
+          echo "spec:"                                         >> "${PATCH_FILE}"
+          echo "  template:"                                   >> "${PATCH_FILE}"
+          echo "    spec:"                                     >> "${PATCH_FILE}"
+          echo "      containers:"                             >> "${PATCH_FILE}"
+          echo "        - name: ${SVC}"                       >> "${PATCH_FILE}"
+          echo "          image: ${ECR_URI}:${IMAGE_TAG}"     >> "${PATCH_FILE}"
+
           echo "✅ Updated ${PATCH_FILE} → ${ECR_URI}:${IMAGE_TAG}"
 
       - name: Validate Kustomize Build
