@@ -33,6 +33,10 @@ def create_app() -> FastAPI:
 
     app.include_router(embed_router)
 
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "healthy"}
+
     @app.on_event("startup")
     async def startup() -> None:
         if not hasattr(app.state, "embedding_service"):
