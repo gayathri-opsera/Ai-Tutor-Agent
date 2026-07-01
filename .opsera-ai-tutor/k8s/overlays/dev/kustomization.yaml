@@ -55,8 +55,8 @@ images:
     newName: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
     newTag: v1.0.0
   - name: PLACEHOLDER_ECR_URI_RAG_PIPELINE
-    newName: PLACEHOLDER_ECR_URI_RAG_PIPELINE
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-rag-pipeline
+    newTag: dev-af80b3e-20260701122957
   - name: PLACEHOLDER_ECR_URI_CONTENT_INGESTION
     newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-ingestion
     newTag: dev-af80b3e-20260701122929
