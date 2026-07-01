@@ -24,6 +24,11 @@ spec:
           image: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
           ports:
             - containerPort: 8001
+          env:
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /tmp/torch_cache
+            - name: HOME
+              value: /tmp
           envFrom:
             - configMapRef:
                 name: ai-tutor-config
