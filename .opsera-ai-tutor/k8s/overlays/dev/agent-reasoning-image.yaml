@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: agent-reasoning
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-agent-reasoning:dev-af80b3e-20260701122929
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-agent-reasoning:dev-dd56058-20260701124429
