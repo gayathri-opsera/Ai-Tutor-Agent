@@ -70,8 +70,8 @@ images:
     newName: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
     newTag: v1.0.0
   - name: PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT
-    newName: PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-management
+    newTag: dev-af80b3e-20260701122926
   - name: PLACEHOLDER_ECR_URI_LEARNER_PROFILE
     newName: PLACEHOLDER_ECR_URI_LEARNER_PROFILE
     newTag: v1.0.0
