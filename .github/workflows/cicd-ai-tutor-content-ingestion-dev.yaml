@@ -5,8 +5,7 @@ on:
     branches: [main]
     paths:
       - services/content-ingestion/**
-      - Dockerfile.service
-      - .github/workflows/cicd-ai-tutor-content-ingestion-dev.yaml
+      - .opsera-ai-tutor/Dockerfile.service
 
   workflow_dispatch:
     inputs:
@@ -211,14 +210,23 @@ jobs:
           git add "${PATCH_FILE}"
           git commit -m "chore(deploy): update ${{ env.SERVICE }} to ${{ needs.build-image.outputs.image_tag }} [skip ci]"
 
-          # Retry push — conflicts are now impossible since each service owns its file
+          # Retry push with conflict-safe rebase.
+          # Two concurrent runs for the same service can conflict on the patch file.
+          # Resolution: keep --ours (our new image tag is always newer).
           for i in 1 2 3; do
             if git push origin main; then
               echo "✅ Pushed manifest update"
               exit 0
             fi
-            echo "Push conflict, pulling latest... (${i}/3)"
-            git pull --rebase origin main
+            echo "Push conflict, rebasing... (${i}/3)"
+            if git pull --rebase origin main; then
+              sleep 2
+              continue
+            fi
+            # Rebase conflict — resolve by keeping our image tag for this file
+            git checkout --ours "${PATCH_FILE}"
+            git add "${PATCH_FILE}"
+            GIT_EDITOR=true git rebase --continue
             sleep 2
           done
           exit 1
@@ -263,6 +271,22 @@ jobs:
           version: 'v1.28.0'
       - name: Setup Spoke Kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Create Application Secrets
+        run: |
+          kubectl create secret generic ai-tutor-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            --from-literal=GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}" \
+            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=KEYCLOAK_CLIENT_SECRET="${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --from-literal=S3_ACCESS_KEY="${{ secrets.S3_ACCESS_KEY }}" \
+            --from-literal=S3_SECRET_KEY="${{ secrets.S3_SECRET_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ ai-tutor-secrets applied in ${{ env.NAMESPACE }}"
+
       - name: Refresh ECR Image Pull Secret
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
