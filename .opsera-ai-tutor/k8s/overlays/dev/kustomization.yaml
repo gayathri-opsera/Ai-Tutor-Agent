@@ -64,8 +64,8 @@ images:
     newName: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
     newTag: v1.0.0
   - name: PLACEHOLDER_ECR_URI_AGENT_REASONING
-    newName: PLACEHOLDER_ECR_URI_AGENT_REASONING
-    newTag: v1.0.0
+    newName: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-agent-reasoning
+    newTag: dev-af80b3e-20260701122929
   - name: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
     newName: PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER
     newTag: v1.0.0
