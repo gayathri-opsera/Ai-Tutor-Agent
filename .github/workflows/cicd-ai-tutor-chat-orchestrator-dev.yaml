@@ -8,6 +8,13 @@ on:
       - Dockerfile.service
       - .github/workflows/cicd-ai-tutor-chat-orchestrator-dev.yaml
 
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'manual deploy'
+
 env:
   TENANT: opsera
   APP_NAME: ai-tutor
