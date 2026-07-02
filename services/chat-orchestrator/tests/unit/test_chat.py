@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from src.main import create_app
 from src.service import (
     ChatOrchestratorService,
+    DatabaseSessionRepository,
     InMemorySessionCache,
     MockSessionRepository,
     Message,
@@ -442,3 +443,163 @@ async def test_stream_response_finish_reason_error_sets_llm_error():
 
     full = "".join(events)
     assert "token" in full
+
+
+# ── New API endpoints ──────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_sessions_endpoint():
+    """GET /api/v1/chat/sessions?user_id=u1 returns session list."""
+    repo = MockSessionRepository()
+    app = create_app(repository=repo)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/api/v1/chat/sessions", json={"user_id": "u1"})
+        resp = await client.get("/api/v1/chat/sessions?user_id=u1")
+    assert resp.status_code == 200
+    assert "sessions" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_select_session_loads_history():
+    """Sending a message to an unknown session falls back to DB history."""
+    repo = MockSessionRepository()
+    app = create_app(repository=repo)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # First create and use a session
+        cr = await client.post("/api/v1/chat/sessions", json={"user_id": "u99"})
+        sid = cr.json()["id"]
+        # History of fresh session is empty
+        hist = await client.get(f"/api/v1/chat/sessions/{sid}/history")
+    assert hist.status_code == 200
+    assert hist.json()["messages"] == []
+
+
+# ── DatabaseSessionRepository (mocked pool) ───────────────────────────────────
+
+class _MockConn:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    async def execute(self, *_, **__): pass
+    async def fetch(self, *_, **__): return self._rows
+    async def fetchrow(self, *_, **__): return self._rows[0] if self._rows else None
+
+
+class _MockPool:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    def acquire(self): return self
+    async def __aenter__(self): return _MockConn(self._rows)
+    async def __aexit__(self, *_): pass
+
+
+@pytest.mark.asyncio
+async def test_db_repo_save_session():
+    pool = _MockPool()
+    repo = DatabaseSessionRepository(pool)
+    session = Session(id="s1", user_id="u1", title="Test")
+    await repo.save_session(session)  # should not raise
+
+
+@pytest.mark.asyncio
+async def test_db_repo_save_message():
+    pool = _MockPool()
+    repo = DatabaseSessionRepository(pool)
+    msg = Message(role="user", content="hello")
+    await repo.save_message("s1", msg)  # should not raise
+
+
+@pytest.mark.asyncio
+async def test_db_repo_get_history_empty():
+    pool = _MockPool(rows=[])
+    repo = DatabaseSessionRepository(pool)
+    history = await repo.get_history("s1")
+    assert history == []
+
+
+@pytest.mark.asyncio
+async def test_db_repo_list_sessions_empty():
+    pool = _MockPool(rows=[])
+    repo = DatabaseSessionRepository(pool)
+    sessions = await repo.list_sessions("u1")
+    assert sessions == []
+
+
+@pytest.mark.asyncio
+async def test_db_repo_save_session_db_error():
+    """DB failure is logged and swallowed, not raised."""
+    class _BrokenPool:
+        def acquire(self): return self
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
+        async def execute(self, *_, **__): raise Exception("DB down")
+        async def fetch(self, *_, **__): raise Exception("DB down")
+
+    repo = DatabaseSessionRepository(_BrokenPool())
+    session = Session(id="s1", user_id="u1", title="Test")
+    await repo.save_session(session)  # must not raise
+    await repo.save_message("s1", Message(role="user", content="hi"))  # must not raise
+    result = await repo.get_history("s1")
+    assert result == []
+    result2 = await repo.list_sessions("u1")
+    assert result2 == []
+
+
+@pytest.mark.asyncio
+async def test_mock_repo_list_sessions():
+    repo = MockSessionRepository()
+    s = Session(id="s1", user_id="u1", title="My Chat")
+    await repo.save_session(s)
+    sessions = await repo.list_sessions("u1")
+    assert any(x["id"] == "s1" for x in sessions)
+    # Different user sees nothing
+    other = await repo.list_sessions("u2")
+    assert other == []
+
+
+@pytest.mark.asyncio
+async def test_send_message_session_not_found_returns_404():
+    """Sending to a non-existent session_id with empty history → 404."""
+    repo = MockSessionRepository()
+    app = create_app(repository=repo)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/chat/sessions/nonexistent-session/messages",
+            json={"content": "hello"},
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_send_message_session_loads_from_history():
+    """If session is not in cache but has DB history, it is restored and message is handled."""
+    repo = MockSessionRepository()
+    # Pre-populate history so get_history returns something
+    await repo.save_message("ghost-session", Message(role="assistant", content="previous message"))
+
+    app = create_app(repository=repo)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with patch("src.service.httpx.AsyncClient") as mock_httpx:
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = MagicMock()
+
+            async def aiter_lines():
+                yield f"data: {json.dumps({'delta': 'restored', 'finish_reason': None})}"
+                yield "data: [DONE]"
+
+            mock_resp.aiter_lines = aiter_lines
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+            mock_client = MagicMock()
+            mock_client.stream = MagicMock(return_value=mock_resp)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_client
+
+            resp = await client.post(
+                "/api/v1/chat/sessions/ghost-session/messages",
+                json={"content": "hello again"},
+            )
+    # SSE response streams successfully (200)
+    assert resp.status_code == 200

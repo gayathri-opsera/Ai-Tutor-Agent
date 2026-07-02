@@ -186,6 +186,100 @@ class MockSessionRepository:
     async def get_history(self, session_id: str) -> list[Message]:
         return self.sessions.get(session_id, Session(id=session_id, user_id="")).messages
 
+    async def list_sessions(self, user_id: str) -> list[dict]:
+        return [
+            {"id": s.id, "title": s.title, "knowledge_base_id": s.knowledge_base_id}
+            for s in self.sessions.values()
+            if s.user_id == user_id
+        ]
+
+
+class DatabaseSessionRepository:
+    """Persists chat sessions and messages to PostgreSQL."""
+
+    def __init__(self, pool) -> None:
+        self._pool = pool
+
+    async def save_session(self, session: Session) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO chat_sessions (id, user_id, knowledge_base_id, title)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (id) DO UPDATE
+                      SET title = EXCLUDED.title,
+                          knowledge_base_id = EXCLUDED.knowledge_base_id
+                    """,
+                    session.id, session.user_id, session.knowledge_base_id, session.title,
+                )
+        except Exception as exc:
+            logger.warning("Failed to persist session %s: %s", session.id, exc)
+
+    async def save_message(self, session_id: str, message: Message) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO chat_messages (id, session_id, role, content, sources_json)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    str(uuid.uuid4()), session_id, message.role, message.content,
+                    json.dumps(message.sources),
+                )
+        except Exception as exc:
+            logger.warning("Failed to persist message for session %s: %s", session_id, exc)
+
+    async def get_history(self, session_id: str) -> list[Message]:
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT role, content, sources_json
+                    FROM chat_messages
+                    WHERE session_id = $1
+                    ORDER BY created_at ASC
+                    """,
+                    session_id,
+                )
+            return [
+                Message(
+                    role=row["role"],
+                    content=row["content"],
+                    sources=row["sources_json"] or [],
+                )
+                for row in rows
+            ]
+        except Exception as exc:
+            logger.warning("Failed to load history for session %s: %s", session_id, exc)
+            return []
+
+    async def list_sessions(self, user_id: str) -> list[dict]:
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, title, knowledge_base_id, created_at
+                    FROM chat_sessions
+                    WHERE user_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                    """,
+                    user_id,
+                )
+            return [
+                {
+                    "id": str(row["id"]),
+                    "title": row["title"],
+                    "knowledge_base_id": str(row["knowledge_base_id"]) if row["knowledge_base_id"] else None,
+                }
+                for row in rows
+            ]
+        except Exception as exc:
+            logger.warning("Failed to list sessions for user %s: %s", user_id, exc)
+            return []
+
 
 # ── RAG retrieval (best-effort) ───────────────────────────────────────────────
 

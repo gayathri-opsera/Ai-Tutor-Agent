@@ -63,6 +63,19 @@ export function ChatInterface() {
       });
   }, []);
 
+  // Load saved sessions from the server when user is known
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(user.id)}`)
+      .then(r => r.ok ? r.json() : { sessions: [] })
+      .then((data: { sessions: Session[] }) => {
+        if (data.sessions?.length) {
+          setSessions(data.sessions);
+        }
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
   const createSession = useCallback(async (kbId?: string) => {
     if (creatingRef.current) return;
     creatingRef.current = true;
@@ -76,7 +89,7 @@ export function ChatInterface() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data: { id: string; title?: string } = await resp.json();
       const title = data.title || 'New Chat';
-      setSessions(s => [...s, { id: data.id, title }]);
+      setSessions(s => [{ id: data.id, title }, ...s.filter(x => x.id !== data.id)]);
       setActiveSession(data.id);
       setActiveTitle(title);
       const kbName = knowledgeBases.find(kb => kb.id === useKbId)?.name;
@@ -88,7 +101,7 @@ export function ChatInterface() {
       // Offline / backend unavailable — create a local demo session
       const id = crypto.randomUUID();
       const title = `Chat — ${user?.name?.split(' ')[0] ?? 'Demo'}`;
-      setSessions(s => [...s, { id, title }]);
+      setSessions(s => [{ id, title }, ...s]);
       setActiveSession(id);
       setActiveTitle(title);
       setMessages([{
@@ -105,15 +118,29 @@ export function ChatInterface() {
   useEffect(() => {
     if (!initialSessionCreated.current && selectedKbId) {
       initialSessionCreated.current = true;
-      // '__none__' means no KBs found — create a session with no KB filter
       createSession(selectedKbId === '__none__' ? undefined : selectedKbId);
     }
   }, [selectedKbId]);
 
-  const selectSession = (s: Session) => {
+  const selectSession = async (s: Session) => {
     setActiveSession(s.id);
     setActiveTitle(s.title);
     setMessages([]);
+    // Load saved messages from server
+    try {
+      const resp = await fetch(`${CHAT_API}/sessions/${s.id}/history`);
+      if (resp.ok) {
+        const data: { messages: Array<{ role: string; content: string; sources?: unknown[] }> } = await resp.json();
+        if (data.messages?.length) {
+          setMessages(data.messages.map(m => ({
+            id: crypto.randomUUID(),
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            sources: m.sources as Message['sources'],
+          })));
+        }
+      }
+    } catch { /* silently keep empty state */ }
   };
 
   const sendMessage = async (text?: string) => {
