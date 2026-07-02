@@ -76,17 +76,30 @@ class ContentManagementService:
             is_active=row["is_active"],
         )
 
-    async def list_kbs(self, organization_id: str) -> list[KnowledgeBase]:
+    async def list_kbs(
+        self, organization_id: str, include_archived: bool = False
+    ) -> list[KnowledgeBase]:
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, name, description, organization_id, is_active
-                FROM knowledge_bases
-                WHERE organization_id = $1 AND is_active = true
-                ORDER BY created_at DESC
-                """,
-                organization_id,
-            )
+            if include_archived:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, name, description, organization_id, is_active
+                    FROM knowledge_bases
+                    WHERE organization_id = $1
+                    ORDER BY is_active DESC, created_at DESC
+                    """,
+                    organization_id,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, name, description, organization_id, is_active
+                    FROM knowledge_bases
+                    WHERE organization_id = $1 AND is_active = true
+                    ORDER BY created_at DESC
+                    """,
+                    organization_id,
+                )
         return [
             KnowledgeBase(
                 id=str(r["id"]),
@@ -97,6 +110,65 @@ class ContentManagementService:
             )
             for r in rows
         ]
+
+    async def update_kb(
+        self, kb_id: str, name: str | None = None, description: str | None = None
+    ) -> KnowledgeBase | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE knowledge_bases
+                SET name        = COALESCE($2, name),
+                    description = COALESCE($3, description),
+                    updated_at  = now()
+                WHERE id = $1
+                RETURNING id, name, description, organization_id, is_active
+                """,
+                kb_id, name, description,
+            )
+        if not row:
+            return None
+        return KnowledgeBase(
+            id=str(row["id"]), name=row["name"],
+            description=row["description"] or "",
+            organization_id=row["organization_id"], is_active=row["is_active"],
+        )
+
+    async def archive_kb(self, kb_id: str) -> KnowledgeBase | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE knowledge_bases SET is_active = false, updated_at = now()
+                WHERE id = $1
+                RETURNING id, name, description, organization_id, is_active
+                """,
+                kb_id,
+            )
+        if not row:
+            return None
+        return KnowledgeBase(
+            id=str(row["id"]), name=row["name"],
+            description=row["description"] or "",
+            organization_id=row["organization_id"], is_active=row["is_active"],
+        )
+
+    async def unarchive_kb(self, kb_id: str) -> KnowledgeBase | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE knowledge_bases SET is_active = true, updated_at = now()
+                WHERE id = $1
+                RETURNING id, name, description, organization_id, is_active
+                """,
+                kb_id,
+            )
+        if not row:
+            return None
+        return KnowledgeBase(
+            id=str(row["id"]), name=row["name"],
+            description=row["description"] or "",
+            organization_id=row["organization_id"], is_active=row["is_active"],
+        )
 
     # ── Documents ─────────────────────────────────────────────────────────────
 
@@ -125,9 +197,10 @@ class ContentManagementService:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, knowledge_base_id, title, content_type, chunk_count, is_active, retired_at
+                SELECT id, knowledge_base_id, title, content_type, chunk_count,
+                       is_active, retired_at, status
                 FROM documents
-                WHERE knowledge_base_id = $1 AND is_active = true
+                WHERE knowledge_base_id = $1 AND status != 'retired'::document_status_enum
                 ORDER BY created_at DESC
                 """,
                 kb_id,
@@ -141,6 +214,7 @@ class ContentManagementService:
                 chunk_count=r["chunk_count"] or 0,
                 is_active=r["is_active"],
                 retired_at=r["retired_at"],
+                metadata={"status": str(r["status"])},
             )
             for r in rows
         ]

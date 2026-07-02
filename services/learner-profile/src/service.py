@@ -96,6 +96,63 @@ class LearnerProfileService:
                 user_id,
             )
 
+    async def _ensure_lesson_table(self, conn) -> None:
+        """Create lesson progress table on first use (idempotent)."""
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS local_lesson_progress (
+                id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id     TEXT NOT NULL,
+                kb_id       TEXT NOT NULL,
+                doc_id      TEXT NOT NULL,
+                completed   BOOLEAN NOT NULL DEFAULT false,
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (user_id, kb_id, doc_id)
+            )
+            """
+        )
+
+    async def save_lesson_progress(
+        self, user_id: str, kb_id: str, doc_id: str, completed: bool
+    ) -> None:
+        await self.get_or_create(user_id)
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            await self._ensure_lesson_table(conn)
+            await conn.execute(
+                """
+                INSERT INTO local_lesson_progress (user_id, kb_id, doc_id, completed)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, kb_id, doc_id)
+                DO UPDATE SET completed = $4, updated_at = now()
+                """,
+                user_id, kb_id, doc_id, completed,
+            )
+
+    async def get_course_progress(
+        self, user_id: str, kb_id: str
+    ) -> dict:
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            await self._ensure_lesson_table(conn)
+            rows = await conn.fetch(
+                """
+                SELECT doc_id, completed, updated_at
+                FROM local_lesson_progress
+                WHERE user_id = $1 AND kb_id = $2
+                """,
+                user_id, kb_id,
+            )
+        lessons = [{"doc_id": str(r["doc_id"]), "completed": r["completed"]} for r in rows]
+        completed_count = sum(1 for l in lessons if l["completed"])
+        return {
+            "user_id": user_id,
+            "kb_id": kb_id,
+            "lessons": lessons,
+            "completed_doc_ids": [l["doc_id"] for l in lessons if l["completed"]],
+            "completed_count": completed_count,
+        }
+
     async def increment_session(self, user_id: str) -> None:
         await self.get_or_create(user_id)
         pool = await self._pool_()
