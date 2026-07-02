@@ -5,21 +5,57 @@ import { CHAT_API, KB_API, CONTENT_API } from '../../config/api';
 import { useUser } from '../../auth/UserContext';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
-interface KnowledgeBase { id: string; name: string; description: string; }
+interface KnowledgeBase { id: string; name: string; description: string; is_active?: boolean; }
 interface Document      { id: string; title: string; status: string; chunk_count: number; content_type: string; }
 interface Message       { id: string; role: 'user' | 'assistant'; content: string; sources?: { chunk_id: string; document_title: string }[]; }
 
 const EMOJIS: Record<string, string> = { pdf: '📕', docx: '📘', text: '📄', url: '🌐', mp4: '🎬', mp3: '🎵' };
 const SECTION_COLORS = ['#a435f0','#1e6055','#c0392b','#1d4ed8','#b45309'];
 
-/* ── Fake progress store (localStorage) ─────────────────────────────────── */
-function getProgress(kbId: string): Record<string, boolean> {
+/* ── Progress helpers ────────────────────────────────────────────────────── */
+// localStorage is the write-through cache; API is the source of truth
+function getLocalProgress(kbId: string): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(`progress_${kbId}`) ?? '{}'); } catch { return {}; }
 }
-function setDocComplete(kbId: string, docId: string, done: boolean) {
-  const p = getProgress(kbId);
+function setLocalProgress(kbId: string, docId: string, done: boolean) {
+  const p = getLocalProgress(kbId);
   p[docId] = done;
   localStorage.setItem(`progress_${kbId}`, JSON.stringify(p));
+}
+async function syncProgressToServer(userId: string, kbId: string, docId: string, completed: boolean) {
+  try {
+    await fetch(`/api/v1/learner/lesson?user_id=${encodeURIComponent(userId)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kb_id: kbId, doc_id: docId, completed }),
+    });
+  } catch { /* best-effort */ }
+}
+async function fetchServerProgress(userId: string, kbId: string): Promise<string[]> {
+  try {
+    const r = await fetch(`/api/v1/learner/course/${kbId}/progress?user_id=${encodeURIComponent(userId)}`);
+    if (r.ok) {
+      const d = await r.json();
+      return d.completed_doc_ids ?? [];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+/* ── Status badge helper ─────────────────────────────────────────────────── */
+function DocStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    active:     { label: '● Active',     color: '#166534', bg: '#dcfce7' },
+    uploading:  { label: '⏫ Uploading', color: '#92400e', bg: '#fef9c3' },
+    processing: { label: '⚙ Processing', color: '#1e40af', bg: '#dbeafe' },
+    error:      { label: '✕ Error',      color: '#dc2626', bg: '#fee2e2' },
+    retired:    { label: '📦 Retired',   color: '#6b7280', bg: '#f3f4f6' },
+  };
+  const s = map[status] ?? map['active'];
+  return (
+    <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 7px', borderRadius: 8, color: s.color, background: s.bg }}>
+      {s.label}
+    </span>
+  );
 }
 
 /* ── Demo data ───────────────────────────────────────────────────────────── */
@@ -60,25 +96,71 @@ export function CourseDetailPage() {
   const [chatLoading, setChatLoading] = useState(false);
   const creatingSession = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const userId = user?.id ?? 'demo-user';
 
   /* ── Load KB + docs ────────────────────────────────────────────────────── */
-  useEffect(() => {
-    Promise.all([
-      fetch(`${KB_API}/${kbId}`).then(r => r.ok ? r.json() : null),
-      fetch(`${KB_API}/${kbId}/documents`).then(r => r.ok ? r.json() : null),
-    ]).then(([kbData, docsData]) => {
+  const loadKbAndDocs = async () => {
+    try {
+      const [kbData, docsData] = await Promise.all([
+        fetch(`${KB_API}/${kbId}`).then(r => r.ok ? r.json() : null),
+        fetch(`${KB_API}/${kbId}/documents`).then(r => r.ok ? r.json() : null),
+      ]);
       setKb(kbData ?? DEMO_KBS[kbId] ?? null);
-      const docList = docsData?.items ?? docsData ?? DEMO_DOCS[kbId] ?? [];
+      const docList: Document[] = docsData?.items ?? docsData ?? DEMO_DOCS[kbId] ?? [];
       setDocs(docList);
       if (docList.length > 0 && !activeDoc) setActiveDoc(docList[0]);
-    }).catch(() => {
+      return docList;
+    } catch {
       setKb(DEMO_KBS[kbId] ?? null);
       const docList = DEMO_DOCS[kbId] ?? [];
       setDocs(docList);
       if (docList.length > 0) setActiveDoc(docList[0]);
+      return docList;
+    }
+  };
+
+  useEffect(() => {
+    loadKbAndDocs().then(docList => {
+      // Start polling if any doc is still processing
+      if (docList.some(d => d.status === 'uploading' || d.status === 'processing')) {
+        startPolling();
+      }
     });
-    setProgress(getProgress(kbId));
+    // Seed progress from localStorage first (instant), then reconcile with server
+    setProgress(getLocalProgress(kbId));
+    fetchServerProgress(userId, kbId).then(completedIds => {
+      if (completedIds.length > 0) {
+        const p: Record<string, boolean> = {};
+        completedIds.forEach(id => { p[id] = true; });
+        setProgress(p);
+        // Persist server state back to localStorage
+        localStorage.setItem(`progress_${kbId}`, JSON.stringify(p));
+      }
+    });
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [kbId]);
+
+  /* ── Real-time document status polling ─────────────────────────────────── */
+  const startPolling = () => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(`${KB_API}/${kbId}/documents`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const updated: Document[] = d.items ?? d ?? [];
+        setDocs(updated);
+        // Stop polling once all docs are settled
+        const allSettled = updated.every(doc => doc.status === 'active' || doc.status === 'error' || doc.status === 'retired');
+        if (allSettled && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+  };
 
   /* ── Load document content ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -154,8 +236,9 @@ export function CourseDetailPage() {
   /* ── Mark document complete ────────────────────────────────────────────── */
   const toggleComplete = (docId: string) => {
     const next = !progress[docId];
-    setDocComplete(kbId, docId, next);
+    setLocalProgress(kbId, docId, next);
     setProgress({ ...progress, [docId]: next });
+    syncProgressToServer(userId, kbId, docId, next);
   };
 
   const completed = Object.values(progress).filter(Boolean).length;
@@ -229,9 +312,12 @@ export function CourseDetailPage() {
                 <p style={{ fontSize: '0.85rem', fontWeight: activeDoc?.id === doc.id ? 700 : 500, color: 'var(--text)', marginBottom: 2, lineHeight: 1.3 }}>
                   {EMOJIS[doc.content_type] ?? '📄'} {doc.title}
                 </p>
-                <p style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
-                  {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''} · {doc.content_type.toUpperCase()}
-                </p>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
+                    {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''} · {doc.content_type.toUpperCase()}
+                  </span>
+                  {doc.status !== 'active' && <DocStatusBadge status={doc.status} />}
+                </div>
               </div>
 
               {/* Lesson number badge */}
@@ -308,10 +394,16 @@ export function CourseDetailPage() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '32px 40px', maxWidth: chatOpen ? 'none' : 800, margin: chatOpen ? 0 : '0 auto' }}>
             {activeDoc ? (
               <article style={{ lineHeight: 1.8 }}>
-                <div style={{ marginBottom: 24, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ marginBottom: 24, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span className="badge badge-brand">{activeDoc.content_type.toUpperCase()}</span>
                   <span className="badge badge-gray">{activeDoc.chunk_count} chunk{activeDoc.chunk_count !== 1 ? 's' : ''}</span>
+                  <DocStatusBadge status={activeDoc.status} />
                   {progress[activeDoc.id] && <span className="badge badge-success">✓ Completed</span>}
+                  {(activeDoc.status === 'uploading' || activeDoc.status === 'processing') && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--brand)', fontStyle: 'italic' }}>
+                      ⏳ Indexing — refreshing automatically…
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '0.95rem', color: 'var(--text)' }} className="lesson-content">
                   <ReactMarkdown>{docContent}</ReactMarkdown>

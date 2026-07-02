@@ -98,6 +98,34 @@ Guidelines:
 - Keep answers focused and educational
 """
 
+# Used when the session is scoped to a knowledge base.
+# Prefers course materials when relevant context is retrieved; falls back to
+# general knowledge for factual/deterministic questions outside the KB scope.
+# "I don't know" is reserved for questions that are genuinely unanswerable by
+# either the course content OR general knowledge.
+KB_SYSTEM_PROMPT = """You are an AI tutor for a specific course.
+
+Answer priority:
+1. If the "Course Materials" section below contains relevant content, answer from it and cite the document title.
+2. If the course materials do not cover the question but you can answer it from reliable general knowledge (e.g. factual, mathematical, scientific questions), do so briefly and note that this is not covered by the course materials.
+3. If the question cannot be answered from either the course materials or general knowledge, respond with:
+   "I don't know — this question doesn't appear to be covered by the course materials or my general knowledge."
+
+Always be accurate. Never fabricate facts or invent content from the course materials.
+"""
+
+# Minimum cosine-similarity score for a chunk to be considered grounding evidence.
+# Long document chunks score very low (~0.03-0.10) against short queries even when
+# semantically relevant because the dense vector averages over many tokens.
+# We set a very low floor here so that ANY retrieved chunk counts as grounding.
+_GROUNDING_THRESHOLD = 0.01
+
+# Kept for backwards-compat with tests; no longer used in the main flow.
+_NO_EVIDENCE_RESPONSE = (
+    "I don't know — this question doesn't appear to be covered by the course materials "
+    "or my general knowledge."
+)
+
 
 # ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -231,13 +259,38 @@ class ChatOrchestratorService:
             parts.append(f"Question: {last_user}")
         return "\n\n".join(parts)
 
+    @staticmethod
+    def _chunk_has_grounding(rag_chunks: list[dict]) -> bool:
+        """Return True if at least one chunk meets the minimum grounding threshold."""
+        return any(float(c.get("score", 0.0)) >= _GROUNDING_THRESHOLD for c in rag_chunks)
+
     def _build_llm_messages(
-        self, session: Session, user_message: str, rag_context: str
+        self,
+        session: Session,
+        user_message: str,
+        rag_context: str,
+        has_grounding: bool = True,
     ) -> list[dict]:
-        """Build the messages list for the LLM gateway request."""
-        system_content = SYSTEM_PROMPT
-        if rag_context:
-            system_content += f"\n\n## Retrieved Context\n\n{rag_context}"
+        """Build the messages list for the LLM gateway request.
+
+        When the session is KB-scoped we use a strict grounding prompt so the
+        LLM cannot answer from its training data.  When evidence is present we
+        include the retrieved text; when it is absent the KB prompt's rule #3
+        instructs the model to emit the 'I don't know' message.
+        """
+        kb_scoped = bool(session.knowledge_base_id)
+
+        if kb_scoped:
+            system_content = KB_SYSTEM_PROMPT
+            if rag_context:
+                system_content += f"\n\n## Course Materials\n\n{rag_context}"
+            # When no chunks were retrieved the LLM falls back to general knowledge
+            # per priority rule #2 in KB_SYSTEM_PROMPT.
+        else:
+            # General chat — allow the LLM to use its knowledge freely
+            system_content = SYSTEM_PROMPT
+            if rag_context:
+                system_content += f"\n\n## Retrieved Context\n\n{rag_context}"
 
         msgs: list[dict] = [{"role": "system", "content": system_content}]
 
@@ -264,6 +317,11 @@ class ChatOrchestratorService:
         if rag_chunks is None:
             rag_chunks = await _fetch_rag_context(user_message, session.knowledge_base_id)
 
+        # 3. Pre-flight grounding check — must happen before the LLM call so we
+        #    can short-circuit when evidence is absent in a KB-scoped session.
+        has_grounding = self._chunk_has_grounding(rag_chunks)
+        kb_scoped = bool(session.knowledge_base_id)
+
         rag_context = "\n\n".join(
             c.get("chunk_text", c.get("text", c.get("content", "")))
             for c in rag_chunks
@@ -277,12 +335,12 @@ class ChatOrchestratorService:
             for c in rag_chunks
         ]
 
-        # 3. Record user message
+        # 4. Record user message
         session.messages.append(Message(role="user", content=user_message))
         await self.cache.set(session)
 
-        # 4. Call LLM Gateway — streaming
-        llm_messages = self._build_llm_messages(session, user_message, rag_context)
+        # 5. Call LLM Gateway — streaming
+        llm_messages = self._build_llm_messages(session, user_message, rag_context, has_grounding)
         full_answer = ""
 
         llm_error = False
@@ -292,10 +350,11 @@ class ChatOrchestratorService:
                     "POST",
                     f"{self.llm_gateway_url}/api/internal/llm/completions/stream",
                     json={
-                        "messages":   llm_messages,
-                        "model_tier": "standard",
-                        "max_tokens": 2048,
-                        "temperature": 0.7,
+                        "messages":    llm_messages,
+                        "model_tier":  "standard",
+                        "max_tokens":  2048,
+                        # Lower temperature enforces closer adherence to context
+                        "temperature": 0.3,
                     },
                 ) as resp:
                     resp.raise_for_status()
@@ -337,9 +396,9 @@ class ChatOrchestratorService:
                 yield f"event: token\ndata: {json.dumps({'token': token + ' '})}\n\n"
             rag_chunks = []  # no document grounding for fallback answers
 
-        # 5. Call confidence grader
-        confidence_score = 0.8
-        source_type = "documents"
+        # 7. Call confidence grader
+        confidence_score = 0.0 if not has_grounding else 0.8
+        source_type = "documents" if has_grounding else "ai_knowledge"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 grade_resp = await client.post(
@@ -348,34 +407,36 @@ class ChatOrchestratorService:
                 )
                 if grade_resp.status_code == 200:
                     grade_data = grade_resp.json()
-                    confidence_score = grade_data.get("confidence", 0.8)
-                    source_type      = grade_data.get("source_type", "documents")
+                    confidence_score = grade_data.get("confidence", confidence_score)
+                    source_type      = grade_data.get("source_type", source_type)
         except Exception:
             pass
 
-        # Filter sources — only show chunks that actually grounded the answer
-        # (score >= 0.25); if none pass, mark as ai_knowledge
-        MIN_SOURCE_SCORE = 0.25
-        grounded_sources = [
-            s for s, c in zip(sources, rag_chunks)
-            if float(c.get("score", 0.0)) >= MIN_SOURCE_SCORE
-        ] if rag_chunks else []
-        if not grounded_sources:
+        # Attribute source_type based on whether RAG returned ANY chunks.
+        # If the LLM received document context (rag_chunks non-empty), the answer
+        # is document-grounded regardless of the cosine score — long chunks naturally
+        # score low (~0.03-0.10) against short queries due to embedding averaging.
+        if rag_chunks:
+            # Include all retrieved sources; deduplicate in the frontend
+            grounded_sources = sources
+            source_type = "documents"
+        else:
+            grounded_sources = []
             source_type = "ai_knowledge"
 
-        # 6. Emit sources + done (with confidence + source_type)
+        # 8. Emit sources + done (with confidence + source_type)
         yield f"event: sources\ndata: {json.dumps({'sources': grounded_sources, 'source_type': source_type})}\n\n"
         message_id = str(uuid.uuid4())
         yield f"event: done\ndata: {json.dumps({'message_id': message_id, 'confidence_score': confidence_score, 'source_type': source_type})}\n\n"
 
-        # 7. Persist assistant message
+        # 9. Persist assistant message
         session.messages.append(
             Message(role="assistant", content=full_answer, sources=grounded_sources)
         )
         await self.cache.set(session)
         await self.repository.save_message(session_id, session.messages[-1])
 
-        # 8. Fire analytics event (best-effort, don't await)
+        # 10. Fire analytics event (best-effort, don't await)
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 await client.post(

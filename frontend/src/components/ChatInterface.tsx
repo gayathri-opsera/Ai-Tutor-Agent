@@ -314,20 +314,16 @@ export function ChatInterface() {
                     ) : null}
                   </div>
                 )}
-                {/* Confidence badge */}
-                {m.confidence !== undefined && (
+                {/* Confidence badge — only shown when we have a grounding signal */}
+                {m.confidence !== undefined && m.source_type === 'documents' && (
                   <div style={{ marginTop: 5 }}>
                     {m.confidence >= 0.5 ? (
                       <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#dcfce7', color: '#166534' }}>
-                        ✓ High confidence ({Math.round(m.confidence * 100)}%) — grounded in your documents
-                      </span>
-                    ) : m.confidence >= 0.25 ? (
-                      <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#fef9c3', color: '#854d0e' }}>
-                        ~ Medium confidence ({Math.round(m.confidence * 100)}%) — partial document match
+                        ✓ High confidence — grounded in your documents
                       </span>
                     ) : (
-                      <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#fef9c3', color: '#92400e' }}>
-                        🧠 Using AI knowledge — documents did not contain a close match
+                      <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#e0f2fe', color: '#075985' }}>
+                        ~ Answered from your course materials
                       </span>
                     )}
                   </div>

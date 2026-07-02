@@ -85,12 +85,27 @@ async def get_document_content(doc_id: str, request: Request):
 @router.get("/{doc_id}/status", response_model=StatusResponse)
 async def get_status(doc_id: str, request: Request):
     svc = request.app.state.ingestion_service
+    # Try in-memory cache first (fast path for recent uploads)
     record = svc.get_status(doc_id)
-    if not record:
-        raise HTTPException(404, "Document not found")
-    return StatusResponse(
-        id=record.id,
-        status=record.status.value,
-        chunk_count=len(record.chunks),
-        error=record.error,
-    )
+    if record:
+        return StatusResponse(
+            id=record.id,
+            status=record.status.value,
+            chunk_count=len(record.chunks),
+            error=record.error,
+        )
+    # Fall back to DB so status survives service restarts
+    try:
+        async with svc._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, status, chunk_count FROM documents WHERE id = $1", doc_id
+            )
+        if row:
+            return StatusResponse(
+                id=str(row["id"]),
+                status=str(row["status"]),
+                chunk_count=row["chunk_count"] or 0,
+            )
+    except Exception:
+        pass
+    raise HTTPException(404, "Document not found")
