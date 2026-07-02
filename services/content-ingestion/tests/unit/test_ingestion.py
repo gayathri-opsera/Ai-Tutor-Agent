@@ -51,12 +51,174 @@ async def test_url_ingestion():
         async def get(self, url, **kwargs):
             class R:
                 status_code = 200
-                text = "<html><body><p>Hello world content here</p></body></html>"
+                headers = {"content-type": "text/html"}
+                text = "<html><body><p>" + "Hello world content here. " * 20 + "</p></body></html>"
                 def raise_for_status(self): pass
             return R()
         async def aclose(self): pass
     chunks = await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com")
     assert len(chunks) >= 1
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_too_little_content_raises():
+    """Pages with < 200 chars of text raise ValueError (likely JS-gated SPA)."""
+    class MockClient:
+        async def get(self, url, **kwargs):
+            class R:
+                status_code = 200
+                headers = {"content-type": "text/html"}
+                text = "<html><body><p>Hi</p></body></html>"
+                def raise_for_status(self): pass
+            return R()
+        async def aclose(self): pass
+    with pytest.raises(ValueError, match="JavaScript"):
+        await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com/spa")
+
+
+@pytest.mark.asyncio
+async def test_ingest_url_api_success():
+    """POST /ingest/url returns 202 with document metadata on success."""
+    from src.service import ContentIngestionService
+
+    store: dict = {}
+    svc = ContentIngestionService(pool=_MockPool(), store=store)
+    test_app = create_app(ingestion_service=svc)
+
+    class _MockURLSvc:
+        async def fetch_and_chunk(self, url):
+            return ["chunk one " * 50, "chunk two " * 50]
+
+    with patch("src.url_ingestion.URLIngestionService", return_value=_MockURLSvc()):
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/content/ingest/url",
+                json={"url": "https://example.com/german", "knowledge_base_id": "kb-1"},
+            )
+    assert resp.status_code == 202
+    data = resp.json()
+    assert "id" in data
+    assert data["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_ingest_url_api_empty_url():
+    """POST /ingest/url with blank URL returns 400."""
+    from src.service import ContentIngestionService
+
+    svc = ContentIngestionService(pool=_MockPool(), store={})
+    test_app = create_app(ingestion_service=svc)
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/content/ingest/url",
+            json={"url": "   ", "knowledge_base_id": "kb-1"},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_ingest_url_api_js_spa_returns_422():
+    """POST /ingest/url returns 422 when page content is too thin (SPA)."""
+    from src.service import ContentIngestionService
+
+    svc = ContentIngestionService(pool=_MockPool(), store={})
+    test_app = create_app(ingestion_service=svc)
+
+    class _SPASvc:
+        async def fetch_and_chunk(self, url):
+            raise ValueError("Page returned too little text")
+
+    with patch("src.url_ingestion.URLIngestionService", return_value=_SPASvc()):
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/content/ingest/url",
+                json={"url": "https://spa.example.com", "knowledge_base_id": "kb-1"},
+            )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ingest_url_api_robots_blocked_returns_403():
+    """POST /ingest/url returns 403 when blocked by robots.txt."""
+    from src.service import ContentIngestionService
+
+    svc = ContentIngestionService(pool=_MockPool(), store={})
+    test_app = create_app(ingestion_service=svc)
+
+    class _BlockedSvc:
+        async def fetch_and_chunk(self, url):
+            raise PermissionError("Blocked by robots.txt: https://blocked.example.com")
+
+    with patch("src.url_ingestion.URLIngestionService", return_value=_BlockedSvc()):
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/content/ingest/url",
+                json={"url": "https://blocked.example.com", "knowledge_base_id": "kb-1"},
+            )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_rejects_pdf_extension():
+    """fetch_and_chunk raises ValueError immediately for .pdf URLs without making a request."""
+    from src.url_ingestion import URLIngestionService
+
+    called = False
+
+    class _NeverCalled:
+        async def get(self, url, **kwargs):
+            nonlocal called
+            called = True
+
+        async def aclose(self): pass
+
+    with pytest.raises(ValueError, match="binary file"):
+        await URLIngestionService(http_client=_NeverCalled()).fetch_and_chunk(
+            "https://www.k5learning.com/worksheets/reading-comprehension/level-q.pdf"
+        )
+    assert not called, "HTTP request should NOT be made for binary file URLs"
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_rejects_binary_content_type():
+    """fetch_and_chunk raises ValueError when the server returns application/pdf content-type."""
+    from src.url_ingestion import URLIngestionService
+
+    class _PDFServer:
+        async def get(self, url, **kwargs):
+            class R:
+                status_code = 200
+                headers = {"content-type": "application/pdf"}
+                text = ""
+                def raise_for_status(self): pass
+            return R()
+        async def aclose(self): pass
+
+    with pytest.raises(ValueError, match="binary file"):
+        await URLIngestionService(http_client=_PDFServer()).fetch_and_chunk(
+            "https://example.com/document"  # no extension hint, but server says PDF
+        )
+
+
+@pytest.mark.asyncio
+async def test_ingest_url_api_pdf_link_returns_422():
+    """POST /ingest/url with a direct .pdf URL returns 422 with a helpful message."""
+    from src.service import ContentIngestionService
+
+    svc = ContentIngestionService(pool=_MockPool(), store={})
+    test_app = create_app(ingestion_service=svc)
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/content/ingest/url",
+            json={
+                "url": "https://www.k5learning.com/worksheets/level-q.pdf",
+                "knowledge_base_id": "kb-1",
+            },
+        )
+    assert resp.status_code == 422
+    assert "binary" in resp.json()["detail"].lower() or "file" in resp.json()["detail"].lower()
 
 
 class _MockPool:
@@ -610,7 +772,7 @@ async def test_upload_transcription_error_status():
             files={"file": ("lecture.mp3", b"fake", "audio/mpeg")},
         )
     assert resp.status_code == 202
-    assert resp.json()["status"] == "error"
+    assert resp.json()["status"] == "failed"
 
 
 @pytest.mark.asyncio

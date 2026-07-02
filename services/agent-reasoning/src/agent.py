@@ -85,6 +85,12 @@ class ReActAgent:
                 chunks = await self.retriever(sub_q)
                 context.extend(chunks)
                 observation = "; ".join(c.get("text", "")[:100] for c in chunks) or "No results"
+                # Retriever found nothing and confidence is low — fall back to live web search
+                if not chunks and self.web_search and confidence < 0.5:
+                    action = "web_search"
+                    web_chunks = await self.web_search(sub_q, confidence)
+                    context.extend(web_chunks)
+                    observation = f"Found {len(web_chunks)} web results"
             elif self.web_search and confidence < 0.5:
                 action = "web_search"
                 web_chunks = await self.web_search(sub_q, confidence)

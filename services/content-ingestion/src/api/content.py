@@ -29,6 +29,41 @@ class TranscriptionEditRequest(BaseModel):
     approve: bool = True
 
 
+class IngestURLRequest(BaseModel):
+    url: str
+    knowledge_base_id: str
+
+
+@router.post("/ingest/url", status_code=202)
+async def ingest_url(body: IngestURLRequest, request: Request):
+    """Fetch a web page by URL, extract its text, and index it into the knowledge base."""
+    if not body.url.strip():
+        raise HTTPException(400, "URL is required")
+    svc = request.app.state.ingestion_service
+    try:
+        record = await svc.create_from_url(
+            url=body.url.strip(),
+            knowledge_base_id=body.knowledge_base_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        msg = str(exc)
+        # FK violation means the knowledge base doesn't exist
+        if "foreign key" in msg.lower() or "not present in table" in msg.lower():
+            raise HTTPException(400, "Knowledge base not found. Please select a valid knowledge base.")
+        raise HTTPException(502, f"Failed to fetch URL: {exc}")
+    return {
+        "id": record.id,
+        "document_id": record.id,
+        "status": record.status.value,
+        "chunk_count": len(record.chunks),
+        "title": record.filename,
+    }
+
+
 @router.post("/upload", status_code=202)
 async def upload_content(
     request: Request,

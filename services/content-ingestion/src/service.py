@@ -304,6 +304,86 @@ class ContentIngestionService:
 
         return record
 
+    async def create_from_url(
+        self,
+        url: str,
+        knowledge_base_id: str,
+    ) -> DocumentRecord:
+        """Fetch a web page, extract its text, chunk it, and index it."""
+        from src.url_ingestion import URLIngestionService
+
+        url_svc = URLIngestionService()
+        chunks = await url_svc.fetch_and_chunk(url)
+
+        if not chunks:
+            raise ValueError(
+                "No content could be extracted from the page. "
+                "It may require JavaScript rendering. "
+                "Try downloading the content directly and uploading as a file."
+            )
+
+        # Derive a clean title from the URL path
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        path_parts = [p for p in parsed.path.rstrip("/").split("/") if p]
+        title = path_parts[-1].replace("-", " ").replace("_", " ").title() if path_parts else parsed.netloc
+        title = f"{title} ({parsed.netloc})"
+
+        full_text = "\n\n".join(chunks)
+        doc_id = str(uuid.uuid4())
+
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO documents
+                    (id, knowledge_base_id, title, content_type, status, chunk_count, content_text, s3_key)
+                VALUES
+                    ($1, $2, $3, $4::content_type_enum, $5::document_status_enum, $6, $7, $8)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                doc_id,
+                knowledge_base_id,
+                title,
+                "text",
+                "active",
+                len(chunks),
+                full_text,
+                None,
+            )
+
+        record = DocumentRecord(
+            id=doc_id,
+            filename=title,
+            content_type="text/html",
+            knowledge_base_id=knowledge_base_id,
+            status=DocumentStatus.ACTIVE,
+            chunks=chunks,
+            content_text=full_text,
+        )
+        self._store[doc_id] = record
+
+        if self._publish:
+            await self._publish("content-ingestion-events", {
+                "event_type": "document.uploaded",
+                "document_id": doc_id,
+                "knowledge_base_id": knowledge_base_id,
+                "chunk_count": len(chunks),
+                "status": "active",
+                "source_url": url,
+            })
+
+        try:
+            await self._index_chunks(
+                doc_id=doc_id,
+                knowledge_base_id=knowledge_base_id,
+                document_title=title,
+                chunks=chunks,
+            )
+        except Exception as exc:
+            logger.warning("RAG indexing failed for URL doc (non-fatal): %s", exc)
+
+        return record
+
     async def _index_chunks(
         self,
         doc_id: str,

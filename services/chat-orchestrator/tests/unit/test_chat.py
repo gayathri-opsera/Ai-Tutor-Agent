@@ -17,6 +17,7 @@ from src.service import (
     _GROUNDING_THRESHOLD,
     _NO_EVIDENCE_RESPONSE,
     _demo_answer,
+    _fetch_web_context,
 )
 
 
@@ -603,3 +604,223 @@ async def test_send_message_session_loads_from_history():
             )
     # SSE response streams successfully (200)
     assert resp.status_code == 200
+
+
+# ── Web search integration ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_fetch_web_context_returns_chunks_on_success():
+    """_fetch_web_context returns chunks from agent-reasoning web_search steps."""
+    import src.service as svc_mod
+
+    agent_response = {
+        "steps": [
+            {"action": "web_search", "observation": "Germany has 83 million inhabitants."},
+        ],
+        "final_answer": "Germany has 83 million inhabitants.",
+    }
+
+    class _FakeResp:
+        def is_success(self): return True
+        @property
+        def is_success(self): return True
+        def json(self): return agent_response
+
+    with patch.object(svc_mod.httpx, "AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=_FakeResp())
+        mock_cls.return_value = mock_client
+
+        chunks = await _fetch_web_context("population of Germany")
+
+    assert len(chunks) >= 1
+    assert "83 million" in chunks[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_web_context_returns_empty_on_network_error():
+    """_fetch_web_context returns [] gracefully when agent-reasoning is down."""
+    import src.service as svc_mod
+
+    with patch.object(svc_mod.httpx, "AsyncClient") as mock_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=Exception("connection refused"))
+        mock_cls.return_value = mock_client
+
+        chunks = await _fetch_web_context("any question")
+    assert chunks == []
+
+
+@pytest.mark.asyncio
+async def test_web_search_not_triggered_for_kb_scoped_session():
+    """Web search must NOT fire when a knowledge_base_id is set — RAG is the authority."""
+    import src.service as svc_mod
+
+    cache = InMemorySessionCache()
+    session = Session(id="kb-session", user_id="u1", knowledge_base_id="kb-1")
+    await cache.set(session)
+
+    svc = ChatOrchestratorService(cache, MockSessionRepository())
+
+    fetch_web_called = False
+
+    async def _spy_web(*args, **kwargs):
+        nonlocal fetch_web_called
+        fetch_web_called = True
+        return []
+
+    # RAG returns nothing, but web search should NOT be called for KB sessions
+    with patch.object(svc_mod, "_fetch_rag_context", AsyncMock(return_value=[])), \
+         patch.object(svc_mod, "_fetch_web_context", side_effect=_spy_web), \
+         patch.object(svc_mod.httpx, "AsyncClient") as mock_cls:
+
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        # Mock SSE stream with a single token
+        async def _lines():
+            yield 'data: {"delta": "answer"}'
+            yield "data: [DONE]"
+
+        mock_resp = AsyncMock()
+        mock_resp.raise_for_status = lambda: None
+        mock_resp.aiter_lines = _lines
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        mock_http.stream = MagicMock(return_value=mock_resp)
+        mock_cls.return_value = mock_http
+
+        events = []
+        async for event in svc.stream_response("kb-session", "what is a verb?"):
+            events.append(event)
+
+    assert not fetch_web_called, "Web search must NOT fire for KB-scoped sessions"
+
+
+# ── Rename session tests ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_in_memory_repo_rename_existing_session():
+    """MockSessionRepository.rename_session updates the title and returns True."""
+    from src.service import MockSessionRepository, Session
+
+    repo = MockSessionRepository()
+    session = Session(id="s1", user_id="u1", title="Old Title")
+    await repo.save_session(session)
+
+    ok = await repo.rename_session("s1", "New Title")
+    assert ok is True
+    assert repo.sessions["s1"].title == "New Title"
+
+
+@pytest.mark.asyncio
+async def test_in_memory_repo_rename_nonexistent_session_returns_false():
+    """MockSessionRepository.rename_session returns False for unknown session IDs."""
+    from src.service import MockSessionRepository
+
+    repo = MockSessionRepository()
+    ok = await repo.rename_session("unknown-id", "Some Title")
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_rename_session_api_success():
+    """PATCH /sessions/{id} returns 200 and the new title."""
+    from src.service import Session
+
+    app = create_app()
+    cache = InMemorySessionCache()
+    session = Session(id="rename-session-1", user_id="u1", title="Old Chat")
+    await cache.set(session)
+
+    repo = MockSessionRepository()
+    repo.sessions[session.id] = session
+
+    app.state.chat_service = ChatOrchestratorService(cache, repo)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.patch(
+            "/api/v1/chat/sessions/rename-session-1",
+            json={"title": "My German Study Session"},
+        )
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "My German Study Session"
+    assert repo.sessions["rename-session-1"].title == "My German Study Session"
+
+
+@pytest.mark.asyncio
+async def test_rename_session_api_not_found():
+    """PATCH /sessions/{id} returns 404 for a session that doesn't exist."""
+    app = create_app()
+    app.state.chat_service = ChatOrchestratorService(InMemorySessionCache(), MockSessionRepository())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.patch(
+            "/api/v1/chat/sessions/does-not-exist",
+            json={"title": "Whatever"},
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rename_session_api_empty_title_returns_400():
+    """PATCH /sessions/{id} with blank title returns 400."""
+    app = create_app()
+    app.state.chat_service = ChatOrchestratorService(InMemorySessionCache(), MockSessionRepository())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.patch(
+            "/api/v1/chat/sessions/any-id",
+            json={"title": "   "},
+        )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_auto_title_set_on_first_message():
+    """stream_response auto-sets session title from the first user message."""
+    from src.service import Session
+
+    cache = InMemorySessionCache()
+    session = Session(id="auto-title-session", user_id="u1", title="New Chat")
+    await cache.set(session)
+
+    repo = MockSessionRepository()
+    repo.sessions[session.id] = session
+
+    svc = ChatOrchestratorService(cache, repo)
+
+    import src.service as svc_mod
+    with patch.object(svc_mod, "_fetch_rag_context", AsyncMock(return_value=[])), \
+         patch.object(svc_mod, "_fetch_web_context", AsyncMock(return_value=[])), \
+         patch.object(svc_mod.httpx, "AsyncClient") as mock_cls:
+
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        async def _lines():
+            yield 'data: {"delta": "answer"}'
+            yield "data: [DONE]"
+
+        mock_resp = AsyncMock()
+        mock_resp.raise_for_status = lambda: None
+        mock_resp.aiter_lines = _lines
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+        mock_http.stream = MagicMock(return_value=mock_resp)
+        mock_cls.return_value = mock_http
+
+        events = []
+        async for event in svc.stream_response("auto-title-session", "How do I learn German?"):
+            events.append(event)
+
+    # Title should have been auto-set from the user message
+    updated = repo.sessions.get("auto-title-session")
+    assert updated is not None
+    assert updated.title == "How do I learn German?"

@@ -16,6 +16,16 @@ export interface Message {
 interface Session { id: string; title: string; }
 interface KnowledgeBase { id: string; name: string; }
 
+// Persist anonymous session IDs in localStorage so they survive page reloads
+const LS_KEY = 'ai_tutor_session_ids';
+function localSessionIds(): string[] {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]'); } catch { return []; }
+}
+function addLocalSessionId(id: string) {
+  const ids = localSessionIds();
+  if (!ids.includes(id)) localStorage.setItem(LS_KEY, JSON.stringify([id, ...ids].slice(0, 50)));
+}
+
 const STARTER_PROMPTS = [
   'What is Python and why is it popular?',
   'Explain async/await with an example',
@@ -34,6 +44,9 @@ export function ChatInterface() {
   const [activeTitle, setActiveTitle]     = useState('New Chat');
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [selectedKbId, setSelectedKbId]   = useState<string>('');
+  // Rename state — which session is being edited inline
+  const [renamingId, setRenamingId]       = useState<string | null>(null);
+  const [renameValue, setRenameValue]     = useState('');
   const bottomRef    = useRef<HTMLDivElement>(null);
   const creatingRef  = useRef(false); // guard against double-creation
 
@@ -63,17 +76,41 @@ export function ChatInterface() {
       });
   }, []);
 
-  // Load saved sessions from the server when user is known
+  // Load saved sessions — server for authenticated users, localStorage IDs for anonymous
   useEffect(() => {
-    if (!user?.id) return;
-    fetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(user.id)}`)
-      .then(r => r.ok ? r.json() : { sessions: [] })
-      .then((data: { sessions: Session[] }) => {
-        if (data.sessions?.length) {
-          setSessions(data.sessions);
+    const userId = user?.id;
+    if (userId) {
+      // Authenticated: load all sessions from the server
+      fetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(userId)}`)
+        .then(r => r.ok ? r.json() : { sessions: [] })
+        .then((data: { sessions: Session[] }) => {
+          if (data.sessions?.length) setSessions(data.sessions);
+        })
+        .catch(() => {});
+    } else {
+      // Anonymous: fetch individual sessions by ID stored in localStorage
+      const ids = localSessionIds();
+      if (!ids.length) return;
+      Promise.allSettled(
+        ids.map(id =>
+          fetch(`${CHAT_API}/sessions/${id}/history`)
+            .then(r => r.ok ? r.json().then(() => id) : null)
+            .catch(() => null)
+        )
+      ).then(results => {
+        const validIds = results
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => (r as PromiseFulfilledResult<string>).value);
+        if (validIds.length) {
+          // We only have IDs, not titles — create minimal session objects with stored titles
+          const stored: Session[] = validIds.map(id => ({
+            id,
+            title: (JSON.parse(localStorage.getItem(`session_title_${id}`) ?? '"New Chat"') as string),
+          }));
+          setSessions(stored);
         }
-      })
-      .catch(() => {});
+      });
+    }
   }, [user?.id]);
 
   const createSession = useCallback(async (kbId?: string) => {
@@ -89,6 +126,8 @@ export function ChatInterface() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data: { id: string; title?: string } = await resp.json();
       const title = data.title || 'New Chat';
+      addLocalSessionId(data.id);
+      localStorage.setItem(`session_title_${data.id}`, JSON.stringify(title));
       setSessions(s => [{ id: data.id, title }, ...s.filter(x => x.id !== data.id)]);
       setActiveSession(data.id);
       setActiveTitle(title);
@@ -193,6 +232,9 @@ export function ChatInterface() {
       setMessages(m => m.map(msg =>
         msg.id === assistantId ? { ...msg, sources, confidence, source_type } : msg
       ));
+      // Sync auto-generated title after first message
+      const msgCount = messages.filter(m => m.role === 'user').length;
+      if (msgCount === 0 && activeSession) syncTitle(activeSession);
     } catch {
       const demo = getDemoAnswer(content);
       setMessages(m => [...m, {
@@ -205,6 +247,36 @@ export function ChatInterface() {
       setLoading(false);
     }
   };
+
+  // After first message, sync the auto-generated title from the server
+  const syncTitle = useCallback(async (sessionId: string) => {
+    try {
+      const r = await fetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(user?.id ?? 'demo-user')}`);
+      if (!r.ok) return;
+      const data: { sessions: Session[] } = await r.json();
+      const updated = data.sessions.find(s => s.id === sessionId);
+      if (updated && updated.title !== 'New Chat') {
+        setSessions(s => s.map(x => x.id === sessionId ? { ...x, title: updated.title } : x));
+        setActiveTitle(updated.title);
+        localStorage.setItem(`session_title_${sessionId}`, JSON.stringify(updated.title));
+      }
+    } catch { /* best-effort */ }
+  }, [user?.id]);
+
+  const renameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    const title = newTitle.trim();
+    if (!title) return;
+    // Optimistic update
+    setSessions(s => s.map(x => x.id === sessionId ? { ...x, title } : x));
+    if (sessionId === activeSession) setActiveTitle(title);
+    localStorage.setItem(`session_title_${sessionId}`, JSON.stringify(title));
+    // Persist to server
+    await fetch(`${CHAT_API}/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    }).catch(() => {});
+  }, [activeSession]);
 
   const rateMessage = (id: string, rating: 'up' | 'down') => {
     setMessages(msgs => msgs.map(m => m.id === id ? { ...m, rating } : m));
@@ -238,15 +310,48 @@ export function ChatInterface() {
         <button className="chat-new-btn" onClick={() => createSession(selectedKbId === '__none__' ? undefined : selectedKbId)}>+ New Chat</button>
 
         <ul className="chat-sessions-list" role="list">
+          {sessions.length === 0 && (
+            <li style={{ padding: '12px 16px', color: '#666', fontSize: '0.78rem' }}>
+              No chats yet — start a new one above.
+            </li>
+          )}
           {sessions.map(s => (
-            <li key={s.id}>
-              <button
-                className={`chat-session-item${activeSession === s.id ? ' active' : ''}`}
-                onClick={() => selectSession(s)}
-              >
-                <span className="chat-session-icon">💬</span>
-                {s.title}
-              </button>
+            <li key={s.id} style={{ position: 'relative' }}>
+              {renamingId === s.id ? (
+                /* ── Inline rename input ── */
+                <div style={{ display: 'flex', gap: 4, padding: '4px 8px' }}>
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
+                      if (e.key === 'Escape') setRenamingId(null);
+                    }}
+                    onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
+                    style={{ flex: 1, fontSize: '0.8rem', padding: '4px 6px', borderRadius: 4, border: '1px solid #7c3aed', background: '#1a1a2e', color: '#fff', outline: 'none' }}
+                    maxLength={80}
+                  />
+                </div>
+              ) : (
+                /* ── Normal session row ── */
+                <button
+                  className={`chat-session-item${activeSession === s.id ? ' active' : ''}`}
+                  onClick={() => selectSession(s)}
+                  title="Double-click to rename"
+                  onDoubleClick={e => {
+                    e.stopPropagation();
+                    setRenamingId(s.id);
+                    setRenameValue(s.title);
+                  }}
+                  style={{ paddingRight: 32 }}
+                >
+                  <span className="chat-session-icon">💬</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {s.title}
+                  </span>
+                </button>
+              )}
             </li>
           ))}
         </ul>

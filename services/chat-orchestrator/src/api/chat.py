@@ -15,6 +15,10 @@ class CreateSessionRequest(BaseModel):
     knowledge_base_id: str | None = None
 
 
+class RenameSessionRequest(BaseModel):
+    title: str
+
+
 class MessageRequest(BaseModel):
     content: str
     knowledge_base_id: str | None = None
@@ -32,6 +36,19 @@ async def list_sessions(user_id: str = Query(...), request: Request = None):
     svc: ChatOrchestratorService = request.app.state.chat_service
     sessions = await svc.repository.list_sessions(user_id)
     return {"sessions": sessions}
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session(session_id: str, body: RenameSessionRequest, request: Request):
+    """Rename a chat session."""
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(400, "Title cannot be empty")
+    svc: ChatOrchestratorService = request.app.state.chat_service
+    ok = await svc.repository.rename_session(session_id, title)
+    if not ok:
+        raise HTTPException(404, "Session not found")
+    return {"id": session_id, "title": title}
 
 
 @router.post("/sessions/{session_id}/messages")

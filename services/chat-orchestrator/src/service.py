@@ -81,11 +81,12 @@ def _demo_answer(question: str) -> str:
         "> Built-in demo mode — real AI responses activate once billing is configured."
     )
 
-LLM_GATEWAY_URL      = os.getenv("LLM_GATEWAY_URL",      "http://llm-gateway:8000")
-RAG_SERVICE_URL      = os.getenv("RAG_SERVICE_URL",      "http://rag-pipeline:8002")
-GRADER_SERVICE_URL   = os.getenv("GRADER_SERVICE_URL",   "http://confidence-grader:8006")
+LLM_GATEWAY_URL       = os.getenv("LLM_GATEWAY_URL",       "http://llm-gateway:8000")
+RAG_SERVICE_URL       = os.getenv("RAG_SERVICE_URL",       "http://rag-pipeline:8002")
+GRADER_SERVICE_URL    = os.getenv("GRADER_SERVICE_URL",    "http://confidence-grader:8006")
 ANALYTICS_SERVICE_URL = os.getenv("ANALYTICS_SERVICE_URL", "http://analytics:8011")
-LEARNER_PROFILE_URL  = os.getenv("LEARNER_PROFILE_URL",  "http://learner-profile:8008")
+LEARNER_PROFILE_URL   = os.getenv("LEARNER_PROFILE_URL",   "http://learner-profile:8008")
+AGENT_REASONING_URL   = os.getenv("AGENT_REASONING_URL",   "http://agent-reasoning:8005")
 
 SYSTEM_PROMPT = """You are an expert AI tutor. You help learners understand complex topics clearly and concisely.
 
@@ -194,6 +195,13 @@ class MockSessionRepository:
             if s.user_id == user_id
         ]
 
+    async def rename_session(self, session_id: str, title: str) -> bool:
+        s = self.sessions.get(session_id)
+        if not s:
+            return False
+        s.title = title
+        return True
+
 
 class DatabaseSessionRepository:
     """Persists chat sessions and messages to PostgreSQL."""
@@ -281,6 +289,18 @@ class DatabaseSessionRepository:
             logger.warning("Failed to list sessions for user %s: %s", user_id, exc)
             return []
 
+    async def rename_session(self, session_id: str, title: str) -> bool:
+        try:
+            async with self._pool.acquire() as conn:
+                result = await conn.execute(
+                    "UPDATE chat_sessions SET title = $1 WHERE id = $2",
+                    title, session_id,
+                )
+            return result == "UPDATE 1"
+        except Exception as exc:
+            logger.warning("Failed to rename session %s: %s", session_id, exc)
+            return False
+
 
 # ── RAG retrieval (best-effort) ───────────────────────────────────────────────
 
@@ -301,6 +321,47 @@ async def _fetch_rag_context(
                 return data.get("chunks", data.get("results", []))
     except Exception as exc:
         logger.debug("RAG retrieval skipped: %s", exc)
+    return []
+
+
+async def _fetch_web_context(query: str) -> list[dict]:
+    """Call agent-reasoning to trigger a real-time web search.
+
+    Only invoked when RAG retrieval returns no results so general-knowledge
+    questions can still get helpful, up-to-date answers.
+    Returns [] on any failure so the chat flow always continues.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{AGENT_REASONING_URL}/api/internal/agent/reason",
+                json={
+                    "query": query,
+                    # confidence=0 forces the agent to trigger web_search immediately
+                    "confidence": 0.0,
+                },
+            )
+            if resp.is_success:
+                data = resp.json()
+                # Extract context text from reasoning steps that used web_search
+                web_chunks: list[dict] = []
+                for step in data.get("steps", []):
+                    if step.get("action") == "web_search" and step.get("observation"):
+                        web_chunks.append({
+                            "text": step["observation"],
+                            "document_title": "Web Search",
+                            "score": 0.5,
+                        })
+                # Also include the final answer text as a high-level chunk
+                if data.get("final_answer") and not web_chunks:
+                    web_chunks.append({
+                        "text": data["final_answer"],
+                        "document_title": "Web Search",
+                        "score": 0.5,
+                    })
+                return web_chunks
+    except Exception as exc:
+        logger.debug("Web search skipped: %s", exc)
     return []
 
 
@@ -420,10 +481,18 @@ class ChatOrchestratorService:
         if rag_chunks is None:
             rag_chunks = await _fetch_rag_context(user_message, session.knowledge_base_id)
 
+        # 2b. Web search fallback — for general (non-KB) sessions with no RAG results,
+        #     call agent-reasoning to fetch live web context so the LLM has up-to-date info.
+        kb_scoped = bool(session.knowledge_base_id)
+        if not rag_chunks and not kb_scoped:
+            web_chunks = await _fetch_web_context(user_message)
+            if web_chunks:
+                rag_chunks = web_chunks
+                logger.debug("Web search returned %d chunks for query: %.60s", len(web_chunks), user_message)
+
         # 3. Pre-flight grounding check — must happen before the LLM call so we
         #    can short-circuit when evidence is absent in a KB-scoped session.
         has_grounding = self._chunk_has_grounding(rag_chunks)
-        kb_scoped = bool(session.knowledge_base_id)
 
         rag_context = "\n\n".join(
             c.get("chunk_text", c.get("text", c.get("content", "")))
@@ -440,6 +509,18 @@ class ChatOrchestratorService:
 
         # 4. Record user message
         session.messages.append(Message(role="user", content=user_message))
+
+        # Auto-title from the first real user message (keep it short and readable)
+        if session.title in ("New Chat", "") and len(session.messages) == 1:
+            raw = user_message.strip()
+            if len(raw) > 60:
+                # Truncate at a word boundary and add ellipsis
+                auto_title = raw[:60].rstrip(" ,.;-") + "…"
+            else:
+                auto_title = raw
+            session.title = auto_title
+            await self.repository.rename_session(session_id, auto_title)
+
         await self.cache.set(session)
 
         # 5. Call LLM Gateway — streaming
