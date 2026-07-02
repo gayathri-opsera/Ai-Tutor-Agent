@@ -233,8 +233,8 @@ export function KnowledgeBaseList() {
 
   // Auto-open create modal when ?create=1 is in URL
   useEffect(() => {
-    if (searchParams.get('create') === '1' && canCreate) setShowCreate(true);
-  }, [searchParams, canCreate]);
+    if (searchParams.get('create') === '1' && canManage) setShowCreate(true);
+  }, [searchParams, canManage]);
 
   /* Apply filter + search */
   const visible = kbs.filter(kb => {
