@@ -378,7 +378,7 @@ export function DocumentUpload() {
               <input id="url-input" className="form-input" type="url" value={url}
                 onChange={e => setUrl(e.target.value)}
                 placeholder="https://docs.python.org/3/tutorial/…" />
-              <p className="form-hint">We'll fetch and process the page content automatically. JavaScript-rendered SPAs may not work.</p>
+              <p className="form-hint">We'll fetch and extract the text automatically. Works with most blogs, docs, and wikis. Very dynamic SPAs (React/Vue apps) may need saving as HTML first.</p>
               {urlError && <p style={{ color: '#dc2626', fontSize: '0.82rem', marginTop: 6 }}>{urlError}</p>}
             </div>
           )}

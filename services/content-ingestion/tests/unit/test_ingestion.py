@@ -53,7 +53,6 @@ async def test_url_ingestion():
                 status_code = 200
                 headers = {"content-type": "text/html"}
                 text = "<html><body><p>" + "Hello world content here. " * 20 + "</p></body></html>"
-                def raise_for_status(self): pass
             return R()
         async def aclose(self): pass
     chunks = await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com")
@@ -62,18 +61,92 @@ async def test_url_ingestion():
 
 @pytest.mark.asyncio
 async def test_url_ingestion_too_little_content_raises():
-    """Pages with < 200 chars of text raise ValueError (likely JS-gated SPA)."""
+    """Pages that yield < 150 chars after both extraction strategies raise ValueError."""
     class MockClient:
         async def get(self, url, **kwargs):
             class R:
                 status_code = 200
                 headers = {"content-type": "text/html"}
                 text = "<html><body><p>Hi</p></body></html>"
-                def raise_for_status(self): pass
             return R()
         async def aclose(self): pass
-    with pytest.raises(ValueError, match="JavaScript"):
+    with pytest.raises(ValueError, match="readable text"):
         await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com/spa")
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_404_raises_friendly_error():
+    """Pages returning HTTP 404 raise ValueError with a clear 'not found' message."""
+    class MockClient:
+        async def get(self, url, **kwargs):
+            class R:
+                status_code = 404
+                headers = {"content-type": "text/html"}
+                text = "<html><body>Not Found</body></html>"
+            return R()
+        async def aclose(self): pass
+    with pytest.raises(ValueError, match="not found"):
+        await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com/missing")
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_403_raises_permission_error():
+    """Pages returning HTTP 403 raise PermissionError."""
+    class MockClient:
+        async def get(self, url, **kwargs):
+            class R:
+                status_code = 403
+                headers = {"content-type": "text/html"}
+                text = "<html><body>Forbidden</body></html>"
+            return R()
+        async def aclose(self): pass
+    with pytest.raises(PermissionError, match="403"):
+        await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com/secret")
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_uses_trafilatura_when_available():
+    """fetch_and_chunk uses trafilatura extraction path when it returns content."""
+    rich_html = (
+        "<html><body><article><h1>Article Title</h1>"
+        + "<p>This is rich article content. " * 30
+        + "</p></article></body></html>"
+    )
+
+    class MockClient:
+        async def get(self, url, **kwargs):
+            class R:
+                status_code = 200
+                headers = {"content-type": "text/html"}
+                text = rich_html
+            return R()
+        async def aclose(self): pass
+
+    from unittest.mock import patch
+    with patch("src.url_ingestion._extract_with_trafilatura", return_value="Rich article content. " * 30):
+        chunks = await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com/article")
+    assert len(chunks) >= 1
+
+
+@pytest.mark.asyncio
+async def test_url_ingestion_falls_back_to_bs4_when_trafilatura_empty():
+    """fetch_and_chunk falls back to BeautifulSoup when trafilatura returns nothing."""
+    html = "<html><body><main><p>" + "Fallback content extracted by BS4. " * 20 + "</p></main></body></html>"
+
+    class MockClient:
+        async def get(self, url, **kwargs):
+            class R:
+                status_code = 200
+                headers = {"content-type": "text/html"}
+                text = html
+            return R()
+        async def aclose(self): pass
+
+    from unittest.mock import patch
+    # Trafilatura returns nothing → falls back to BS4
+    with patch("src.url_ingestion._extract_with_trafilatura", return_value=""):
+        chunks = await URLIngestionService(http_client=MockClient()).fetch_and_chunk("http://example.com/plain")
+    assert len(chunks) >= 1
 
 
 @pytest.mark.asyncio
