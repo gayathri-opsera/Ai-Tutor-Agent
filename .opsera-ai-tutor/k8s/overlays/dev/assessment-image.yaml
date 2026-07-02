@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: assessment
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-assessment:dev-e9fd2ed-20260701180209
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-assessment:dev-bcc221f-20260702133903
