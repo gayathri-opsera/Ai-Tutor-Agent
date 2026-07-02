@@ -4,6 +4,10 @@ metadata:
   name: ai-tutor-frontend
   annotations:
     kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "500m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "120"
   labels:
     app.kubernetes.io/name: ai-tutor
     environment: dev

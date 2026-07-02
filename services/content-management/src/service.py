@@ -119,8 +119,7 @@ class ContentManagementService:
                 """
                 UPDATE knowledge_bases
                 SET name        = COALESCE($2, name),
-                    description = COALESCE($3, description),
-                    updated_at  = now()
+                    description = COALESCE($3, description)
                 WHERE id = $1
                 RETURNING id, name, description, organization_id, is_active
                 """,
@@ -138,7 +137,7 @@ class ContentManagementService:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                UPDATE knowledge_bases SET is_active = false, updated_at = now()
+                UPDATE knowledge_bases SET is_active = false
                 WHERE id = $1
                 RETURNING id, name, description, organization_id, is_active
                 """,
@@ -156,7 +155,7 @@ class ContentManagementService:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                UPDATE knowledge_bases SET is_active = true, updated_at = now()
+                UPDATE knowledge_bases SET is_active = true
                 WHERE id = $1
                 RETURNING id, name, description, organization_id, is_active
                 """,
@@ -250,7 +249,7 @@ class ContentManagementService:
                     "DELETE FROM local_topic_progress WHERE knowledge_base_id = $1", kb_id
                 )
                 await conn.execute(
-                    "DELETE FROM local_lesson_progress WHERE knowledge_base_id = $1", kb_id
+                    "DELETE FROM local_lesson_progress WHERE kb_id = $1", kb_id
                 )
                 # Delete the KB — documents + document_chunks cascade
                 result = await conn.execute(
