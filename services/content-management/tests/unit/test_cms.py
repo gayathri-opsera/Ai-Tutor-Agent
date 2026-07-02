@@ -467,3 +467,48 @@ async def test_cms_api_delete_kb_not_found_returns_404():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.delete("/api/v1/knowledge-bases/does-not-exist")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_hard_delete_kb_cleans_production_fk_tables():
+    """hard_delete_kb must delete assessment_results, assessments,
+    learner_topic_progress, and chat_sessions BEFORE deleting the KB row.
+
+    These four tables have NO ACTION FK constraints on knowledge_bases, so
+    omitting them causes a FK violation (500 Internal Server Error).
+    """
+    executed: list[str] = []
+
+    class _TrackingPool(_InMemoryPool):
+        async def execute(self, sql, *args):
+            executed.append(sql.strip().split("\n")[0].strip())
+            return await super().execute(sql, *args)
+
+    pool = _TrackingPool()
+    svc = ContentManagementService(pool=pool)
+    kb = await svc.create_kb("FK Test KB", "org1")
+
+    executed.clear()
+    deleted = await svc.hard_delete_kb(kb.id)
+
+    assert deleted is True
+
+    # Every table with a NO ACTION FK must be cleaned before the KB row
+    tables_deleted = [s for s in executed if s.startswith("DELETE FROM")]
+    table_names = [s.split("DELETE FROM ")[1].split(" ")[0] for s in tables_deleted]
+
+    required = {"assessment_results", "assessments", "learner_topic_progress", "chat_sessions"}
+    assert required.issubset(set(table_names)), (
+        f"Missing required pre-delete tables. Got: {table_names}"
+    )
+
+    # KB row must be last
+    kb_delete_idx = next(
+        (i for i, t in enumerate(table_names) if t == "knowledge_bases"), None
+    )
+    assert kb_delete_idx is not None, "knowledge_bases delete not found"
+    for req_table in required:
+        req_idx = next((i for i, t in enumerate(table_names) if t == req_table), None)
+        assert req_idx is not None and req_idx < kb_delete_idx, (
+            f"{req_table} must be deleted before knowledge_bases"
+        )

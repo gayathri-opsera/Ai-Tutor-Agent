@@ -222,17 +222,46 @@ class ContentManagementService:
         """
         Permanently remove a knowledge base and all its content.
 
-        Execution order:
-          1. assessment_results  (child of assessments)
-          2. assessments         (NOT CASCADE from kb)
-          3. chat_sessions       (NOT CASCADE from kb)
-          4. learner_topic_progress (nullable FK, safe to NULL or delete)
-          5. DELETE knowledge_bases — documents + chunks cascade automatically
+        Deletion order follows FK constraints (NO ACTION = must delete child
+        before parent; CASCADE = handled automatically):
+
+          1. assessment_results   → child of assessments (NO ACTION)
+          2. assessments          → FK to knowledge_bases (NO ACTION)
+          3. learner_topic_progress → FK to knowledge_bases (NO ACTION)
+          4. chat_sessions        → FK to knowledge_bases (NO ACTION);
+                                    chat_messages CASCADE from chat_sessions
+          5. local_assessment_results → child of local_assessments
+          6. local_assessments    → local dev table
+          7. local_topic_progress → local dev table
+          8. local_lesson_progress → local dev table
+          9. knowledge_bases      → documents + document_chunks CASCADE
+
         Returns True if a row was deleted, False if the KB didn't exist.
         """
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                # Clean up non-cascading child tables (tables use the local_ prefix)
+                # Step 1-2: production assessment tables
+                await conn.execute(
+                    """
+                    DELETE FROM assessment_results
+                    WHERE assessment_id IN (
+                        SELECT id FROM assessments WHERE knowledge_base_id = $1
+                    )
+                    """,
+                    kb_id,
+                )
+                await conn.execute(
+                    "DELETE FROM assessments WHERE knowledge_base_id = $1", kb_id
+                )
+                # Step 3: learner progress (production table, NO ACTION FK)
+                await conn.execute(
+                    "DELETE FROM learner_topic_progress WHERE knowledge_base_id = $1", kb_id
+                )
+                # Step 4: chat sessions (chat_messages CASCADE from session)
+                await conn.execute(
+                    "DELETE FROM chat_sessions WHERE knowledge_base_id = $1", kb_id
+                )
+                # Steps 5-8: local dev tables
                 await conn.execute(
                     """
                     DELETE FROM local_assessment_results
@@ -251,7 +280,7 @@ class ContentManagementService:
                 await conn.execute(
                     "DELETE FROM local_lesson_progress WHERE kb_id = $1", kb_id
                 )
-                # Delete the KB — documents + document_chunks cascade
+                # Step 9: delete the KB — documents + document_chunks CASCADE
                 result = await conn.execute(
                     "DELETE FROM knowledge_bases WHERE id = $1", kb_id
                 )
