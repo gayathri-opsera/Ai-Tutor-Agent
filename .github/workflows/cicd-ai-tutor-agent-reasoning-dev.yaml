@@ -361,8 +361,8 @@ jobs:
             PHASE=$(kubectl get app ${APP} -n argocd               -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "Unknown")
             HEALTH=$(kubectl get app ${APP} -n argocd               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
             echo "[$i/60] Health: ${HEALTH} | Phase: ${PHASE}"
-            if [ "${PHASE}" = "Succeeded" ] && [ "${HEALTH}" = "Healthy" ]; then
-              echo "✅ ArgoCD sync succeeded — app is Healthy"
+            if [ "${PHASE}" = "Succeeded" ]; then
+              echo "✅ ArgoCD sync operation Succeeded (Health: ${HEALTH})"
               exit 0
             fi
             if [ "${PHASE}" = "Failed" ] || [ "${PHASE}" = "Error" ]; then

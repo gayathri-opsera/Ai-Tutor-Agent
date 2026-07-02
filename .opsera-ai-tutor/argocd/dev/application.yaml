@@ -18,6 +18,14 @@ spec:
   destination:
     name: opsera-usw2-np
     namespace: opsera-ai-tutor-dev
+  # Ignore spec differences on StatefulSets (postgres, weaviate) that K8s
+  # mutates after creation — they run correctly but always show as OutOfSync.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+
   syncPolicy:
     automated:
       prune: true
@@ -25,6 +33,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 3
       backoff:
