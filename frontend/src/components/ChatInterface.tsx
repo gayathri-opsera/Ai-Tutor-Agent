@@ -316,45 +316,6 @@ export function ChatInterface() {
                 <div className={`chat-bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
                   <ReactMarkdown>{m.content || '…'}</ReactMarkdown>
                 </div>
-                {/* Source attribution */}
-                {m.role === 'assistant' && (
-                  <div style={{ marginTop: 8 }}>
-                    {m.source_type === 'documents' && m.sources && m.sources.length > 0 ? (
-                      <div className="chat-sources">
-                        <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 600 }}>
-                          📄 From your documents:
-                        </span>
-                        {/* deduplicate by document_title */}
-                        {[...new Map(m.sources.map(s => [s.document_title, s])).values()].map(s => (
-                          <span key={s.chunk_id} className="chat-source-tag">{s.document_title}</span>
-                        ))}
-                      </div>
-                    ) : m.source_type === 'ai_knowledge' ? (
-                      <div style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        fontSize: '0.72rem', color: '#92400e',
-                        background: '#fef9c3', border: '1px solid #fde68a',
-                        borderRadius: 8, padding: '3px 10px',
-                      }}>
-                        🧠 AI general knowledge — no uploaded document matched this query
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-                {/* Confidence badge — only shown when we have a grounding signal */}
-                {m.confidence !== undefined && m.source_type === 'documents' && (
-                  <div style={{ marginTop: 5 }}>
-                    {m.confidence >= 0.5 ? (
-                      <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#dcfce7', color: '#166534' }}>
-                        ✓ High confidence — grounded in your documents
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: '#e0f2fe', color: '#075985' }}>
-                        ~ Answered from your course materials
-                      </span>
-                    )}
-                  </div>
-                )}
                 {m.role === 'assistant' && m.content && (
                   <div className="chat-rating">
                     <button className={`chat-rate-btn${m.rating === 'up' ? ' active' : ''}`}
