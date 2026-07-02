@@ -83,11 +83,66 @@ def _extract_with_trafilatura(html: str, url: str) -> str:
 
 
 def _extract_with_bs4(html: str) -> str:
-    """BeautifulSoup fallback — strips boilerplate tags and returns plain text."""
+    """BeautifulSoup fallback — strips boilerplate and targets the main content zone."""
+    import re as _re
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside",
+                     "form", "button", "noscript"]):
         tag.decompose()
-    return soup.get_text(separator="\n", strip=True)
+
+    # Prefer semantic content containers over the full document
+    main = (
+        soup.find("article")
+        or soup.find("main")
+        or soup.find(attrs={"role": "main"})
+        or soup.find(id=_re.compile(r"(content|main|article|body)", _re.I))
+        or soup.find(class_=_re.compile(
+            r"(article|post|entry|content|body|blog)", _re.I
+        ))
+        or soup
+    )
+
+    raw = main.get_text(separator="\n", strip=True)
+    return _clean_nav_artifacts(raw)
+
+
+def _clean_nav_artifacts(text: str) -> str:
+    """Remove navigation-style lines that survive tag-based stripping.
+
+    Squarespace/Wix/Webflow sites often render menus as plain divs, so they
+    survive <nav> removal.  A line is treated as a nav artifact when it is
+    short (≤4 words) AND contains no sentence-ending punctuation — menu
+    labels like "About", "My Gear Recommendations", "Skip to Content", "Back"
+    all match this pattern while real sentences do not.
+    Consecutive duplicate lines (menus repeated for mobile/desktop) are also
+    removed.
+    """
+    lines = text.split("\n")
+    seen: set[str] = set()
+    cleaned: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            if cleaned and cleaned[-1] != "":
+                cleaned.append("")
+            continue
+
+        word_count = len(line.split())
+        has_punctuation = any(c in line for c in ".,:;?!—()")
+
+        # Skip short nav-like lines (≤4 words, no sentence punctuation)
+        if word_count <= 4 and not has_punctuation:
+            continue
+
+        # Skip exact duplicates (mobile + desktop nav blocks are identical)
+        if line in seen:
+            continue
+
+        seen.add(line)
+        cleaned.append(line)
+
+    return "\n".join(cleaned).strip()
 
 
 # ── Main service ───────────────────────────────────────────────────────────────

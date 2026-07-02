@@ -149,6 +149,72 @@ async def test_url_ingestion_falls_back_to_bs4_when_trafilatura_empty():
     assert len(chunks) >= 1
 
 
+# ── _clean_nav_artifacts unit tests ──────────────────────────────────────────
+
+def test_clean_nav_artifacts_removes_short_nav_lines():
+    """Single-word and 2-word nav labels are stripped."""
+    from src.url_ingestion import _clean_nav_artifacts
+    raw = "About\nSkip to Content\nOpen Menu\nThis is a real sentence about Düsseldorf Altstadt.\nBack"
+    cleaned = _clean_nav_artifacts(raw)
+    assert "About" not in cleaned
+    assert "Skip to Content" not in cleaned
+    assert "Open Menu" not in cleaned
+    assert "Back" not in cleaned
+    assert "Düsseldorf Altstadt" in cleaned
+
+
+def test_clean_nav_artifacts_keeps_sentences_with_punctuation():
+    """Short lines with punctuation (e.g. list items ending in '.') are kept."""
+    from src.url_ingestion import _clean_nav_artifacts
+    raw = "Free.\nThis is a great hotel in the Altstadt."
+    cleaned = _clean_nav_artifacts(raw)
+    assert "Free." in cleaned
+    assert "Altstadt" in cleaned
+
+
+def test_clean_nav_artifacts_removes_duplicate_lines():
+    """Duplicate lines (desktop + mobile nav) are deduplicated."""
+    from src.url_ingestion import _clean_nav_artifacts
+    raw = (
+        "Actual article sentence about Düsseldorf photography spots.\n"
+        "Actual article sentence about Düsseldorf photography spots.\n"
+        "Another unique sentence about Altstadt architecture."
+    )
+    cleaned = _clean_nav_artifacts(raw)
+    # Only one copy of the duplicated sentence
+    assert cleaned.count("Düsseldorf photography spots") == 1
+    assert "Altstadt architecture" in cleaned
+
+
+def test_bs4_extractor_targets_article_tag():
+    """_extract_with_bs4 uses <article> content rather than the whole page when present."""
+    from src.url_ingestion import _extract_with_bs4
+    html = (
+        "<html><body>"
+        "<nav>Home About Contact</nav>"
+        "<article><p>" + "Altstadt is the historic old town of Düsseldorf. " * 20 + "</p></article>"
+        "<footer>Copyright 2026</footer>"
+        "</body></html>"
+    )
+    text = _extract_with_bs4(html)
+    assert "Altstadt" in text
+    # Navigation items should not appear
+    assert "Home" not in text or text.count("Home") == 0
+
+
+def test_bs4_extractor_falls_back_to_main_tag():
+    """_extract_with_bs4 uses <main> when no <article> is present."""
+    from src.url_ingestion import _extract_with_bs4
+    html = (
+        "<html><body>"
+        "<div class='sidebar'>Menu items here</div>"
+        "<main><p>" + "Main content about Königsallee in Düsseldorf. " * 20 + "</p></main>"
+        "</body></html>"
+    )
+    text = _extract_with_bs4(html)
+    assert "Königsallee" in text
+
+
 @pytest.mark.asyncio
 async def test_ingest_url_api_success():
     """POST /ingest/url returns 202 with document metadata on success."""
