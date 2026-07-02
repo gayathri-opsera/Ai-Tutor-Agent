@@ -233,25 +233,24 @@ class ContentManagementService:
         """
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                # Clean up non-cascading child tables
+                # Clean up non-cascading child tables (tables use the local_ prefix)
                 await conn.execute(
                     """
-                    DELETE FROM assessment_results
+                    DELETE FROM local_assessment_results
                     WHERE assessment_id IN (
-                        SELECT id FROM assessments WHERE knowledge_base_id = $1
+                        SELECT id FROM local_assessments WHERE knowledge_base_id = $1
                     )
                     """,
                     kb_id,
                 )
                 await conn.execute(
-                    "DELETE FROM assessments WHERE knowledge_base_id = $1", kb_id
+                    "DELETE FROM local_assessments WHERE knowledge_base_id = $1", kb_id
                 )
                 await conn.execute(
-                    "DELETE FROM chat_sessions WHERE knowledge_base_id = $1", kb_id
+                    "DELETE FROM local_topic_progress WHERE knowledge_base_id = $1", kb_id
                 )
                 await conn.execute(
-                    "UPDATE learner_topic_progress SET knowledge_base_id = NULL WHERE knowledge_base_id = $1",
-                    kb_id,
+                    "DELETE FROM local_lesson_progress WHERE knowledge_base_id = $1", kb_id
                 )
                 # Delete the KB — documents + document_chunks cascade
                 result = await conn.execute(

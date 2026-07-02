@@ -98,7 +98,7 @@ class _InMemoryPool:
             # Also delete associated documents (cascade)
             self.docs = {k: v for k, v in self.docs.items() if v.get("knowledge_base_id") != kb_id}
             return "DELETE 1" if existed else "DELETE 0"
-        elif "DELETE FROM" in sql or "UPDATE learner_topic_progress" in sql:
+        elif "DELETE FROM" in sql or "UPDATE local_topic_progress" in sql:
             # no-op for other cascade cleanup tables in the mock
             return "DELETE 0"
 
