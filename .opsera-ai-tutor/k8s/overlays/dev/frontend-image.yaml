@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-frontend:dev-19c288f-20260702202346
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-frontend:dev-bef05d7-20260702213853
