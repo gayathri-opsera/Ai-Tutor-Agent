@@ -7,8 +7,8 @@ metadata:
     tenant: opsera
 data:
   # LLM Provider defaults
-  DEFAULT_PROVIDER: "groq"
-  FALLBACK_PROVIDER: "openai"
+  DEFAULT_PROVIDER: "anthropic"
+  FALLBACK_PROVIDER: "groq"
 
   # Kafka — sync mode avoids needing a real broker for dev
   KAFKA_SYNC_MODE: "true"
