@@ -2,15 +2,31 @@ _format_version: "3.0"
 
 services:
   - name: llm-gateway
-    url: http://llm-gateway:8001
+    url: http://llm-gateway:8000
   - name: embedding-service
-    url: http://embedding-service:8002
+    url: http://embedding-service:8001
   - name: rag-pipeline
-    url: http://rag-pipeline:8010
-  - name: chat-orchestrator
-    url: http://chat-orchestrator:8020
+    url: http://rag-pipeline:8002
   - name: content-ingestion
-    url: http://content-ingestion:8030
+    url: http://content-ingestion:8003
+  - name: chat-orchestrator
+    url: http://chat-orchestrator:8004
+  - name: agent-reasoning
+    url: http://agent-reasoning:8005
+  - name: confidence-grader
+    url: http://confidence-grader:8006
+  - name: content-management
+    url: http://content-management:8007
+  - name: learner-profile
+    url: http://learner-profile:8008
+  - name: admin-config
+    url: http://admin-config:8009
+  - name: assessment
+    url: http://assessment:8010
+  - name: analytics
+    url: http://analytics:8011
+  - name: audit
+    url: http://audit:8012
 
 plugins:
   - name: rate-limiting
@@ -26,6 +42,28 @@ plugins:
       key_claim_name: kid
 
 routes:
+  # ── Internal service-to-service routes (no auth) ────────────────────────────
+  - name: llm-internal
+    service: llm-gateway
+    paths: ["/api/internal/llm"]
+
+  - name: embeddings-internal
+    service: embedding-service
+    paths: ["/api/internal/embeddings"]
+
+  - name: rag-internal
+    service: rag-pipeline
+    paths: ["/api/internal/rag"]
+
+  - name: grader-internal
+    service: confidence-grader
+    paths: ["/api/internal/grader"]
+
+  - name: agent-internal
+    service: agent-reasoning
+    paths: ["/api/internal/agent"]
+
+  # ── Public-facing API routes (JWT auth required) ─────────────────────────────
   - name: chat-api
     service: chat-orchestrator
     paths: ["/api/v1/chat"]
@@ -40,17 +78,58 @@ routes:
       - name: rate-limiting
       - name: jwt
 
-  - name: rag-internal
-    service: rag-pipeline
-    paths: ["/api/internal/rag"]
+  - name: knowledge-bases-api
+    service: content-management
+    paths: ["/api/v1/knowledge-bases"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
 
-  - name: llm-api
-    service: llm-gateway
-    paths: ["/api/v1/llm"]
+  - name: documents-api
+    service: content-management
+    paths: ["/api/v1/documents"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
 
-  - name: embeddings-api
-    service: embedding-service
-    paths: ["/api/v1/embeddings"]
+  - name: stats-api
+    service: content-management
+    paths: ["/api/v1/stats"]
+    plugins:
+      - name: jwt
+
+  - name: analytics-api
+    service: analytics
+    paths: ["/api/v1/analytics"]
+    plugins:
+      - name: jwt
+
+  - name: learner-api
+    service: learner-profile
+    paths: ["/api/v1/learner"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
+
+  - name: admin-api
+    service: admin-config
+    paths: ["/api/v1/admin"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
+
+  - name: assessments-api
+    service: assessment
+    paths: ["/api/v1/assessments"]
+    plugins:
+      - name: rate-limiting
+      - name: jwt
+
+  - name: audit-api
+    service: audit
+    paths: ["/api/v1/audit"]
+    plugins:
+      - name: jwt
 
 consumers:
   - username: ai-tutor-user
