@@ -205,10 +205,7 @@ services:
     <<: *service-defaults
     build:
       context: .
-      dockerfile: Dockerfile.service
-      args:
-        SERVICE: content-ingestion
-        PORT: "8003"
+      dockerfile: Dockerfile.content-ingestion
     ports:
       - "8003:8003"
     environment:

@@ -219,6 +219,46 @@ class ContentManagementService:
             for r in rows
         ]
 
+    async def hard_delete_kb(self, kb_id: str) -> bool:
+        """
+        Permanently remove a knowledge base and all its content.
+
+        Execution order:
+          1. assessment_results  (child of assessments)
+          2. assessments         (NOT CASCADE from kb)
+          3. chat_sessions       (NOT CASCADE from kb)
+          4. learner_topic_progress (nullable FK, safe to NULL or delete)
+          5. DELETE knowledge_bases — documents + chunks cascade automatically
+        Returns True if a row was deleted, False if the KB didn't exist.
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                # Clean up non-cascading child tables
+                await conn.execute(
+                    """
+                    DELETE FROM assessment_results
+                    WHERE assessment_id IN (
+                        SELECT id FROM assessments WHERE knowledge_base_id = $1
+                    )
+                    """,
+                    kb_id,
+                )
+                await conn.execute(
+                    "DELETE FROM assessments WHERE knowledge_base_id = $1", kb_id
+                )
+                await conn.execute(
+                    "DELETE FROM chat_sessions WHERE knowledge_base_id = $1", kb_id
+                )
+                await conn.execute(
+                    "UPDATE learner_topic_progress SET knowledge_base_id = NULL WHERE knowledge_base_id = $1",
+                    kb_id,
+                )
+                # Delete the KB — documents + document_chunks cascade
+                result = await conn.execute(
+                    "DELETE FROM knowledge_bases WHERE id = $1", kb_id
+                )
+        return result == "DELETE 1"
+
     async def retire_document(self, doc_id: str) -> Document | None:
         now = datetime.now(timezone.utc)
         async with self._pool.acquire() as conn:

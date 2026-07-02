@@ -84,10 +84,10 @@ async def unarchive_kb(kb_id: str, request: Request):
 
 @router.delete("/knowledge-bases/{kb_id}", status_code=204)
 async def delete_kb(kb_id: str, request: Request):
-    """Soft-delete: archive the KB (hard delete is irreversible and out of scope)."""
+    """Permanently delete a KB and all its documents, chunks, sessions, and assessments."""
     svc = request.app.state.cms
-    kb = await svc.archive_kb(kb_id)
-    if not kb:
+    deleted = await svc.hard_delete_kb(kb_id)
+    if not deleted:
         raise HTTPException(404, "Knowledge base not found")
 
 

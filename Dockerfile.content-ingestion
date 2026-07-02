@@ -1,0 +1,45 @@
+# Dedicated Dockerfile for content-ingestion service.
+# Extends the base service pattern but adds ffmpeg and bakes in the
+# faster-whisper "base" model (~145 MB) so transcription works without
+# any external API key or runtime downloads.
+
+FROM python:3.11-slim AS base
+
+# System deps — ffmpeg is required for audio extraction from video files
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl build-essential ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Shared libraries ─────────────────────────────────────────────────────────
+COPY libs/kafka/src         /app/libs/kafka/src
+COPY libs/kafka/requirements.txt /app/libs/kafka/requirements.txt
+COPY libs/vector-db/src     /app/libs/vector-db/src
+COPY libs/auth/src          /app/libs/auth/src
+COPY libs/cache/src         /app/libs/cache/src
+COPY libs/logging/src       /app/libs/logging/src
+COPY libs/metrics/src       /app/libs/metrics/src
+
+# ── Service deps (includes faster-whisper) ───────────────────────────────────
+COPY services/content-ingestion/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# ── Pre-download the Whisper "base" model at build time (best-effort) ────────
+# Bakes ~145 MB into the image so transcription works offline.
+# Falls back gracefully to a runtime download if the build environment has no
+# network access to HuggingFace (CI sandboxes, air-gapped runners, etc.).
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" 2>&1 || \
+    echo "WARNING: faster-whisper model pre-download skipped — will download on first use at runtime."
+
+# ── Service source ───────────────────────────────────────────────────────────
+COPY services/content-ingestion/src /app/src
+
+# ── Python path includes all shared libs ────────────────────────────────────
+ENV PYTHONPATH=/app:/app/libs/kafka/src:/app/libs/vector-db/src:/app/libs/auth/src:/app/libs/cache/src:/app/libs/logging/src:/app/libs/metrics/src
+ENV PORT=8003
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8003/health || exit 1
+
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port 8003"]

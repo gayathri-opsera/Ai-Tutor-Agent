@@ -73,6 +73,10 @@ class _InMemoryPool:
             return rows
         return []
 
+    def transaction(self):
+        """Return self so `async with pool.transaction()` works in tests."""
+        return self
+
     async def execute(self, sql, *args):
         now = datetime.datetime.utcnow()
         if "INSERT INTO knowledge_bases" in sql:
@@ -87,6 +91,16 @@ class _InMemoryPool:
                 "status": "active", "chunk_count": 0, "is_active": True,
                 "retired_at": None, "created_at": now,
             }
+        elif "DELETE FROM knowledge_bases WHERE id" in sql:
+            kb_id = str(args[0])
+            existed = kb_id in self.kbs
+            self.kbs.pop(kb_id, None)
+            # Also delete associated documents (cascade)
+            self.docs = {k: v for k, v in self.docs.items() if v.get("knowledge_base_id") != kb_id}
+            return "DELETE 1" if existed else "DELETE 0"
+        elif "DELETE FROM" in sql or "UPDATE learner_topic_progress" in sql:
+            # no-op for other cascade cleanup tables in the mock
+            return "DELETE 0"
 
     async def fetchval(self, sql, *args):
         return None
@@ -389,3 +403,67 @@ async def test_cms_api_create_doc_happy_path():
         )
     assert resp.status_code == 201
     assert resp.json()["title"] == "New Doc"
+
+
+# ── hard_delete_kb tests ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_hard_delete_kb_removes_row():
+    """hard_delete_kb returns True and removes the KB from the store."""
+    pool = _InMemoryPool()
+    svc = ContentManagementService(pool=pool)
+    kb = await svc.create_kb("To Delete", "org1")
+    assert kb.id in pool.kbs
+
+    deleted = await svc.hard_delete_kb(kb.id)
+    assert deleted is True
+    assert kb.id not in pool.kbs
+
+
+@pytest.mark.asyncio
+async def test_hard_delete_kb_cascades_documents():
+    """hard_delete_kb also removes associated documents."""
+    pool = _InMemoryPool()
+    svc = ContentManagementService(pool=pool)
+    kb = await svc.create_kb("KB With Docs", "org1")
+    await svc.create_document(kb.id, "Doc 1", "pdf")
+    await svc.create_document(kb.id, "Doc 2", "text")
+    assert len([d for d in pool.docs.values() if d["knowledge_base_id"] == kb.id]) == 2
+
+    await svc.hard_delete_kb(kb.id)
+    remaining = [d for d in pool.docs.values() if d["knowledge_base_id"] == kb.id]
+    assert remaining == []
+
+
+@pytest.mark.asyncio
+async def test_hard_delete_kb_not_found_returns_false():
+    """hard_delete_kb returns False when the KB does not exist."""
+    pool = _InMemoryPool()
+    svc = ContentManagementService(pool=pool)
+    result = await svc.hard_delete_kb("nonexistent-id")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_cms_api_delete_kb_returns_204():
+    """DELETE /api/v1/knowledge-bases/{id} returns 204 and removes the KB."""
+    pool = _InMemoryPool()
+    svc = ContentManagementService(pool=pool)
+    kb = await svc.create_kb("Delete Me", "org1")
+    app.state.cms = svc
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.delete(f"/api/v1/knowledge-bases/{kb.id}")
+    assert resp.status_code == 204
+    assert kb.id not in pool.kbs
+
+
+@pytest.mark.asyncio
+async def test_cms_api_delete_kb_not_found_returns_404():
+    """DELETE /api/v1/knowledge-bases/{id} returns 404 for unknown KB."""
+    pool = _InMemoryPool()
+    app.state.cms = ContentManagementService(pool=pool)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.delete("/api/v1/knowledge-bases/does-not-exist")
+    assert resp.status_code == 404

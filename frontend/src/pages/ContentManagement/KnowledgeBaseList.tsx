@@ -14,6 +14,45 @@ const FALLBACK_KBS: KB[] = [
   { id: 'bbbbbbbb-0002-0000-0000-000000000002', name: 'Machine Learning Basics', description: 'Intro to supervised, unsupervised, and reinforcement learning.', is_active: true },
 ];
 
+/* ── Confirm Delete Modal ─────────────────────────────────────────────────── */
+function ConfirmDeleteModal({ kb, onClose, onConfirm, deleting }: {
+  kb: KB;
+  onClose: () => void;
+  onConfirm: () => void;
+  deleting: boolean;
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+        <div style={{ background: '#fef2f2', padding: '20px 24px', borderBottom: '1px solid #fca5a5' }}>
+          <h2 style={{ color: '#dc2626', fontSize: '1.05rem', fontWeight: 800, marginBottom: 4 }}>🗑 Delete Course</h2>
+          <p style={{ color: '#991b1b', fontSize: '0.82rem' }}>This will archive the course and remove it from the active list.</p>
+        </div>
+        <div style={{ padding: '20px 24px' }}>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text)', marginBottom: 20 }}>
+            Are you sure you want to delete <strong>"{kb.name}"</strong>?
+            {kb.doc_count ? ` It contains ${kb.doc_count} document${kb.doc_count !== 1 ? 's' : ''}.` : ''}
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="btn"
+              style={{ flex: 1, background: '#dc2626', color: '#fff', border: 'none' }}
+              onClick={onConfirm}
+              disabled={deleting}
+            >
+              {deleting ? '⏳ Deleting…' : '🗑 Yes, Delete'}
+            </button>
+            <button className="btn btn-outline" style={{ flex: 1 }} onClick={onClose} disabled={deleting}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Edit KB Modal ────────────────────────────────────────────────────────── */
 function EditKBModal({ kb, onClose, onSave }: {
   kb: KB;
@@ -184,6 +223,8 @@ export function KnowledgeBaseList() {
   const [showCreate, setShowCreate] = useState(false);
   const [editKb, setEditKb]         = useState<KB | null>(null);
   const [menuOpen, setMenuOpen]     = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<KB | null>(null);
+  const [deleting, setDeleting]     = useState(false);
   const [searchParams]              = useSearchParams();
   const navigate                    = useNavigate();
   const { user }                    = useUser();
@@ -217,18 +258,31 @@ export function KnowledgeBaseList() {
     setMenuOpen(null);
     const endpoint = kb.is_active ? `${KB_API}/${kb.id}/archive` : `${KB_API}/${kb.id}/unarchive`;
     try {
-      await fetch(endpoint, { method: 'POST' });
+      const resp = await fetch(endpoint, { method: 'POST' });
+      if (!resp.ok) throw new Error(`${resp.status}`);
       setKbs(prev => prev.map(k => k.id === kb.id ? { ...k, is_active: !kb.is_active } : k));
-    } catch { alert('Failed to update course.'); }
+    } catch { alert('Failed to update course. Please try again.'); }
   };
 
-  const handleDelete = async (kb: KB) => {
+  // Opens the confirm modal — replaces window.confirm() which browsers suppress
+  const handleDeleteClick = (kb: KB) => {
     setMenuOpen(null);
-    if (!confirm(`Archive "${kb.name}"? It will no longer appear in the active list.`)) return;
+    setDeleteTarget(kb);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await fetch(`${KB_API}/${kb.id}`, { method: 'DELETE' });
-      setKbs(prev => prev.map(k => k.id === kb.id ? { ...k, is_active: false } : k));
-    } catch { alert('Failed to delete course.'); }
+      const resp = await fetch(`${KB_API}/${deleteTarget.id}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+      setKbs(prev => prev.filter(k => k.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err) {
+      alert(`Failed to delete "${deleteTarget.name}". ${err instanceof Error ? err.message : ''}`);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // Auto-open create modal when ?create=1 is in URL
@@ -263,6 +317,14 @@ export function KnowledgeBaseList() {
     <div onClick={() => setMenuOpen(null)}>
       {showCreate && <CreateKBModal onClose={() => setShowCreate(false)} onCreate={handleCreated} />}
       {editKb && <EditKBModal kb={editKb} onClose={() => setEditKb(null)} onSave={handleEdited} />}
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          kb={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteConfirm}
+          deleting={deleting}
+        />
+      )}
 
       {/* Page header */}
       <div className="page-header">
@@ -372,7 +434,7 @@ export function KnowledgeBaseList() {
                             {kb.is_active ? '📦 Archive course' : '✅ Unarchive course'}
                           </button>
                           <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid var(--border)' }} />
-                          <button onClick={() => handleDelete(kb)}
+                          <button onClick={() => handleDeleteClick(kb)}
                             style={{ display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left', border: 'none', background: 'none', cursor: 'pointer', fontSize: '0.85rem', color: '#dc2626' }}>
                             🗑 Delete course
                           </button>

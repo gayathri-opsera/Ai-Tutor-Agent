@@ -78,6 +78,76 @@ const DEMO_CONTENT: Record<string, string> = {
   'cccccccc-0003-0000-0000-000000000003': `# Linear Regression Explained\n\nLinear regression is the foundation of supervised machine learning.\n\n## The Model\n\n$$y = \\beta_0 + \\beta_1 x_1 + \\beta_2 x_2 + \\ldots + \\beta_n x_n + \\varepsilon$$\n\n| Term | Meaning |\n|------|--------|\n| $y$ | Target variable (what we predict) |\n| $\\beta_0$ | Intercept |\n| $\\beta_1 \\ldots \\beta_n$ | Feature coefficients (slopes) |\n| $\\varepsilon$ | Error term |\n\n## How It Learns\n\nLinear regression minimises the **Sum of Squared Residuals (SSR)**:\n\n$$SSR = \\sum_{i=1}^{n}(y_i - \\hat{y}_i)^2$$\n\n## Python Implementation\n\n\`\`\`python\nfrom sklearn.linear_model import LinearRegression\nimport numpy as np\n\n# Training data\nX = np.array([[1], [2], [3], [4], [5]])\ny = np.array([2, 4, 5, 4, 5])\n\n# Train\nmodel = LinearRegression()\nmodel.fit(X, y)\n\n# Predict\nprediction = model.predict([[6]])\nprint(f"Predicted value: {prediction[0]:.2f}")\n\`\`\`\n\n## Key Assumptions\n\n1. **Linearity** — relationship between X and y is linear\n2. **Independence** — observations are independent\n3. **Normality** — residuals are normally distributed\n4. **Homoscedasticity** — constant variance of residuals`,
 };
 
+/* ── Video player with graceful fallback ─────────────────────────────────── */
+function VideoPlayer({ docId, contentType, title }: { docId: string; contentType: string; title: string }) {
+  const [mediaError, setMediaError] = useState(false);
+  const mediaUrl = `${CONTENT_API}/${docId}/media`;
+
+  if (mediaError) {
+    return (
+      <div style={{ marginBottom: 28, padding: '20px 24px', borderRadius: 10, background: '#fef9c3', border: '1px solid #fbbf24', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <span style={{ fontSize: '1.8rem', flexShrink: 0 }}>🎬</span>
+        <div>
+          <p style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: 4 }}>Video not available for playback</p>
+          <p style={{ fontSize: '0.82rem', color: '#78350f', lineHeight: 1.5 }}>
+            This video was uploaded before media storage was enabled. Please <strong>re-upload the video file</strong> to enable playback. The transcript below is still searchable.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 28, borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
+      <video
+        key={docId}
+        controls
+        style={{ width: '100%', maxHeight: 420, display: 'block' }}
+        preload="metadata"
+        onError={() => setMediaError(true)}
+      >
+        <source
+          src={mediaUrl}
+          type={contentType === 'webm' ? 'video/webm' : 'video/mp4'}
+          onError={() => setMediaError(true)}
+        />
+        Your browser does not support the video player.
+      </video>
+    </div>
+  );
+}
+
+function AudioPlayer({ docId, title }: { docId: string; title: string }) {
+  const [mediaError, setMediaError] = useState(false);
+  const mediaUrl = `${CONTENT_API}/${docId}/media`;
+
+  return (
+    <div style={{ marginBottom: 28, padding: '16px 20px', borderRadius: 10, background: 'var(--bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <span style={{ fontSize: '2rem' }}>🎵</span>
+      <div style={{ flex: 1 }}>
+        <p style={{ fontWeight: 600, marginBottom: 6, fontSize: '0.9rem' }}>{title}</p>
+        {mediaError ? (
+          <p style={{ fontSize: '0.8rem', color: '#b45309', background: '#fef9c3', padding: '6px 10px', borderRadius: 6 }}>
+            ⚠️ Audio not available — please re-upload the file to enable playback.
+          </p>
+        ) : (
+          <audio
+            key={docId}
+            controls
+            style={{ width: '100%' }}
+            preload="metadata"
+            onError={() => setMediaError(true)}
+          >
+            <source src={mediaUrl} onError={() => setMediaError(true)} />
+            Your browser does not support the audio player.
+          </audio>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 /* ── Main Component ──────────────────────────────────────────────────────── */
 export function CourseDetailPage() {
   const { id: kbId = '' } = useParams<{ id: string }>();
@@ -405,9 +475,33 @@ export function CourseDetailPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: '0.95rem', color: 'var(--text)' }} className="lesson-content">
-                  <ReactMarkdown>{docContent}</ReactMarkdown>
-                </div>
+
+                {/* ── Media player for video/audio lessons ──────────────────── */}
+                {['mp4', 'webm'].includes(activeDoc.content_type) && activeDoc.status === 'active' && (
+                  <VideoPlayer docId={activeDoc.id} contentType={activeDoc.content_type} title={activeDoc.title} />
+                )}
+
+                {['mp3', 'wav', 'ogg', 'm4a'].includes(activeDoc.content_type) && activeDoc.status === 'active' && (
+                  <AudioPlayer docId={activeDoc.id} title={activeDoc.title} />
+                )}
+
+                {/* ── Transcription / text content ──────────────────────────── */}
+                {['mp4', 'webm', 'mp3', 'wav', 'ogg', 'm4a'].includes(activeDoc.content_type) && docContent && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
+                      📝 Transcript
+                    </p>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--text)', background: 'var(--bg)', borderRadius: 8, padding: '14px 18px', border: '1px solid var(--border)', lineHeight: 1.7 }} className="lesson-content">
+                      <ReactMarkdown>{docContent}</ReactMarkdown>
+                    </div>
+                  </div>
+                )}
+
+                {!['mp4', 'webm', 'mp3', 'wav', 'ogg', 'm4a'].includes(activeDoc.content_type) && (
+                  <div style={{ fontSize: '0.95rem', color: 'var(--text)' }} className="lesson-content">
+                    <ReactMarkdown>{docContent}</ReactMarkdown>
+                  </div>
+                )}
               </article>
             ) : (
               <div className="empty-state">

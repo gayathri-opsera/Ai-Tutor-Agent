@@ -2,7 +2,14 @@ import { useRef, useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KB_API, CONTENT_API } from '../../config/api';
 
-type UploadState = 'idle' | 'uploading' | 'success' | 'error';
+type FileStatus = 'pending' | 'uploading' | 'success' | 'error';
+interface FileEntry {
+  file: File;
+  status: FileStatus;
+  error?: string;
+  docId?: string;
+}
+
 interface KB { id: string; name: string; }
 
 const FALLBACK_KBS: KB[] = [
@@ -10,32 +17,46 @@ const FALLBACK_KBS: KB[] = [
   { id: 'bbbbbbbb-0002-0000-0000-000000000002', name: 'Machine Learning Basics' },
 ];
 
+const ACCEPTED = '.pdf,.docx,.txt,.md,.mp4,.mp3,.wav,.webm,.m4a,.ogg';
+const isMedia = (name: string) => /\.(mp4|mp3|wav|webm|m4a|ogg)$/i.test(name);
+
+function fileIcon(name: string) {
+  if (isMedia(name)) return '🎬';
+  if (/\.pdf$/i.test(name)) return '📕';
+  return '📄';
+}
+
+function humanSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
 export function DocumentUpload() {
-  const [drag, setDrag]       = useState(false);
-  const [file, setFile]       = useState<File | null>(null);
-  const [url, setUrl]         = useState('');
-  const [tab, setTab]         = useState<'file' | 'url'>('file');
-  const [state, setState]     = useState<UploadState>('idle');
-  const [progress, setProgress] = useState(0);
-  const [kbs, setKbs]         = useState<KB[]>([]);
-  const [selectedKb, setSelectedKb] = useState('');
-  const [newKbMode, setNewKbMode]   = useState(false);
-  const [newKbName, setNewKbName]   = useState('');
-  const [newKbDesc, setNewKbDesc]   = useState('');
-  const [creatingKb, setCreatingKb] = useState(false);
-  const [uploadedDocId, setUploadedDocId] = useState<string | null>(null);
+  const [drag, setDrag]               = useState(false);
+  const [entries, setEntries]         = useState<FileEntry[]>([]);
+  const [url, setUrl]                 = useState('');
+  const [tab, setTab]                 = useState<'file' | 'url'>('file');
+  const [uploading, setUploading]     = useState(false);
+  const [allDone, setAllDone]         = useState(false);
+  const [urlError, setUrlError]       = useState('');
+  const [kbs, setKbs]                 = useState<KB[]>([]);
+  const [selectedKb, setSelectedKb]   = useState('');
+  const [newKbMode, setNewKbMode]     = useState(false);
+  const [newKbName, setNewKbName]     = useState('');
+  const [newKbDesc, setNewKbDesc]     = useState('');
+  const [creatingKb, setCreatingKb]   = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const preselectedKbName = searchParams.get('kbName');
 
-  /* ── Load knowledge bases ───────────────────────────────────────────────── */
+  /* ── Load KBs ─────────────────────────────────────────────────────────────── */
   useEffect(() => {
     fetch(`${KB_API}?organization_id=default`)
       .then(r => r.json())
       .then(d => {
         const list: KB[] = d.items ?? d ?? [];
         setKbs(list.length > 0 ? list : FALLBACK_KBS);
-        // Pre-select from query param or first item
         const preselect = searchParams.get('kb');
         setSelectedKb(preselect ?? list[0]?.id ?? FALLBACK_KBS[0].id);
       })
@@ -46,9 +67,29 @@ export function DocumentUpload() {
       });
   }, []);
 
-  const preselectedKbName = searchParams.get('kbName');
+  /* ── Add files (dedup by name) ────────────────────────────────────────────── */
+  const addFiles = (incoming: FileList | File[]) => {
+    const arr = Array.from(incoming);
+    setEntries(prev => {
+      const existingNames = new Set(prev.map(e => e.file.name));
+      const fresh = arr
+        .filter(f => !existingNames.has(f.name))
+        .map(f => ({ file: f, status: 'pending' as FileStatus }));
+      return [...prev, ...fresh];
+    });
+  };
 
-  /* ── Create a new knowledge base inline ────────────────────────────────── */
+  const removeEntry = (name: string) =>
+    setEntries(prev => prev.filter(e => e.file.name !== name));
+
+  /* ── Drag & drop ──────────────────────────────────────────────────────────── */
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDrag(false);
+    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  };
+
+  /* ── Create KB inline ─────────────────────────────────────────────────────── */
   const handleCreateKb = async () => {
     if (!newKbName.trim()) return;
     setCreatingKb(true);
@@ -74,95 +115,97 @@ export function DocumentUpload() {
     } finally { setCreatingKb(false); }
   };
 
-  /* ── Drag & drop ────────────────────────────────────────────────────────── */
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDrag(false);
-    const f = e.dataTransfer.files[0];
-    if (f) setFile(f);
-  };
-
-  /* ── Simulate progress for demo ─────────────────────────────────────────── */
-  const simulateUpload = async () => {
-    setState('uploading');
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(r => setTimeout(r, 180));
-      setProgress(i);
-    }
-    setState('success');
-  };
-
-  /* ── Submit ─────────────────────────────────────────────────────────────── */
+  /* ── Upload all pending files sequentially ───────────────────────────────── */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (tab === 'file' && !file) return;
-    if (tab === 'url' && !url.trim()) return;
-    if (!selectedKb) return;
 
-    setState('uploading');
-    setProgress(0);
-
-    try {
-      if (tab === 'file' && file) {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('knowledge_base_id', selectedKb);
-        const resp = await fetch(`${CONTENT_API}/upload`, { method: 'POST', body: fd });
-        if (!resp.ok) throw new Error(`${resp.status}`);
-        const data = await resp.json();
-        setUploadedDocId(data.id ?? data.document_id ?? null);
-        setState('success');
-      } else if (tab === 'url' && url.trim()) {
+    if (tab === 'url') {
+      if (!url.trim()) return;
+      setUploading(true);
+      setUrlError('');
+      try {
         const resp = await fetch(`${CONTENT_API}/ingest/url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: url.trim(), knowledge_base_id: selectedKb }),
         });
-        if (!resp.ok) throw new Error(`${resp.status}`);
-        const data = await resp.json();
-        setUploadedDocId(data.id ?? data.document_id ?? null);
-        setState('success');
-      }
-    } catch {
-      // Demo fallback — simulate success
-      await simulateUpload();
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          setUrlError(err.detail ?? err.message ?? `Server error (${resp.status})`);
+        } else {
+          setAllDone(true);
+        }
+      } catch (err) {
+        setUrlError(err instanceof Error ? err.message : 'Network error');
+      } finally { setUploading(false); }
+      return;
     }
+
+    // File mode — upload sequentially
+    const pending = entries.filter(e => e.status === 'pending');
+    if (!pending.length || !selectedKb) return;
+
+    setUploading(true);
+    for (const entry of pending) {
+      // Mark as uploading
+      setEntries(prev => prev.map(e =>
+        e.file.name === entry.file.name ? { ...e, status: 'uploading' } : e
+      ));
+
+      try {
+        const fd = new FormData();
+        fd.append('file', entry.file);
+        fd.append('knowledge_base_id', selectedKb);
+        const resp = await fetch(`${CONTENT_API}/upload`, { method: 'POST', body: fd });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          const msg = err.detail ?? err.message ?? `Server error (${resp.status})`;
+          setEntries(prev => prev.map(e =>
+            e.file.name === entry.file.name ? { ...e, status: 'error', error: msg } : e
+          ));
+        } else {
+          const data = await resp.json();
+          setEntries(prev => prev.map(e =>
+            e.file.name === entry.file.name
+              ? { ...e, status: 'success', docId: data.id ?? data.document_id }
+              : e
+          ));
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Network error';
+        setEntries(prev => prev.map(e =>
+          e.file.name === entry.file.name ? { ...e, status: 'error', error: msg } : e
+        ));
+      }
+    }
+
+    setUploading(false);
+    setAllDone(true);
   };
 
-  /* ── Success screen ─────────────────────────────────────────────────────── */
-  if (state === 'success') {
-    const kbName = kbs.find(k => k.id === selectedKb)?.name ?? 'your knowledge base';
+  const hasPending   = entries.some(e => e.status === 'pending');
+  const hasSucceeded = entries.some(e => e.status === 'success');
+  const hasFailed    = entries.some(e => e.status === 'error');
+
+  /* ── URL success ──────────────────────────────────────────────────────────── */
+  if (tab === 'url' && allDone) {
     return (
       <div className="container" style={{ maxWidth: 600, paddingTop: 60 }}>
         <div className="empty-state">
           <div className="empty-state-icon">✅</div>
-          <h3>Upload complete!</h3>
-          <p>
-            Your {tab === 'file' ? `file <strong>${file?.name}</strong>` : 'web page'} is being processed and indexed into <strong>{kbName}</strong>.
-            This usually takes a few seconds.
-          </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 8 }}>
-            <button className="btn btn-brand" onClick={() => navigate(`/course/${selectedKb}`)}>
-              📚 Open Course
-            </button>
-            <button className="btn btn-outline" onClick={() => navigate('/content')}>
-              Browse All
-            </button>
-            <button className="btn btn-outline"
-              onClick={() => { setState('idle'); setFile(null); setUrl(''); setProgress(0); setUploadedDocId(null); }}>
-              Upload Another
-            </button>
+          <h3>Web page queued!</h3>
+          <p>The page is being fetched and indexed into <strong>{kbs.find(k => k.id === selectedKb)?.name}</strong>.</p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+            <button className="btn btn-brand" onClick={() => navigate(`/course/${selectedKb}`)}>Open Course</button>
+            <button className="btn btn-outline" onClick={() => { setAllDone(false); setUrl(''); }}>Add Another</button>
           </div>
-          {uploadedDocId && (
-            <p style={{ marginTop: 12, fontSize: '0.78rem', color: 'var(--muted)' }}>
-              Document ID: <code>{uploadedDocId}</code>
-            </p>
-          )}
         </div>
       </div>
     );
   }
 
-  /* ── Main form ──────────────────────────────────────────────────────────── */
+  /* ── Main form ────────────────────────────────────────────────────────────── */
   return (
     <div>
       <div className="page-header">
@@ -173,11 +216,11 @@ export function DocumentUpload() {
               ←
             </button>
             <div>
-              <h1>Upload Document</h1>
+              <h1>Upload Documents</h1>
               <p>
                 {preselectedKbName
                   ? <>Adding content to <strong style={{ color: '#a435f0' }}>{preselectedKbName}</strong></>
-                  : 'Add PDFs, DOCX files, or web pages to your knowledge base'}
+                  : 'Add PDFs, DOCX, media files, or web pages to your knowledge base'}
               </p>
             </div>
           </div>
@@ -196,9 +239,9 @@ export function DocumentUpload() {
         </div>
 
         <form onSubmit={handleSubmit}>
-          {/* File / URL input */}
           {tab === 'file' ? (
             <>
+              {/* Drop zone */}
               <div
                 className={`upload-zone${drag ? ' drag-over' : ''}`}
                 onDrop={handleDrop}
@@ -209,28 +252,123 @@ export function DocumentUpload() {
                 aria-label="Drop zone for file upload"
                 onKeyDown={e => e.key === 'Enter' && inputRef.current?.click()}
               >
-                <div className="upload-zone-icon">{file ? '📄' : '☁️'}</div>
-                {file ? (
-                  <>
-                    <h3>{file.name}</h3>
-                    <p>{(file.size / 1024 / 1024).toFixed(2)} MB · Click to change</p>
-                  </>
-                ) : (
-                  <>
-                    <h3>Drag & drop your file here</h3>
-                    <p>Supports PDF, DOCX, TXT, MD · Max 50 MB</p>
-                  </>
-                )}
-                <input ref={inputRef} type="file" accept=".pdf,.docx,.txt,.md"
-                  style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] ?? null)} />
+                <div className="upload-zone-icon">☁️</div>
+                <h3>Drag & drop files here</h3>
+                <p>Supports PDF, DOCX, TXT, MD, MP4, MP3, WAV, WebM · Max 50 MB each</p>
+                <p style={{ fontSize: '0.78rem', color: 'var(--brand)', fontWeight: 600, marginTop: 4 }}>
+                  Click to select one or multiple files
+                </p>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  multiple
+                  accept={ACCEPTED}
+                  style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }}
+                />
               </div>
 
-              {file && (
-                <div style={{ background: 'var(--brand-light)', border: '1px solid var(--brand)', borderRadius: 'var(--radius)', padding: '10px 16px', marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span>📄</span>
-                  <span style={{ fontSize: '0.88rem', fontWeight: 600, flex: 1 }}>{file.name}</span>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                  <button type="button" onClick={() => setFile(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1rem', cursor: 'pointer' }}>✕</button>
+              {/* File list */}
+              {entries.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>
+                      {entries.length} file{entries.length > 1 ? 's' : ''} selected
+                    </span>
+                    {entries.some(e => e.status === 'pending') && (
+                      <button type="button" className="btn btn-outline btn-sm"
+                        onClick={() => setEntries([])} style={{ fontSize: '0.75rem' }}>
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {entries.map(entry => (
+                      <div key={entry.file.name} style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '10px 14px', borderRadius: 10,
+                        background: entry.status === 'success' ? '#f0fdf4'
+                                  : entry.status === 'error' ? '#fef2f2'
+                                  : entry.status === 'uploading' ? 'var(--brand-light)'
+                                  : 'var(--bg)',
+                        border: `1px solid ${
+                          entry.status === 'success' ? '#86efac'
+                          : entry.status === 'error' ? '#fca5a5'
+                          : entry.status === 'uploading' ? 'var(--brand)'
+                          : 'var(--border)'
+                        }`,
+                      }}>
+                        <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>{fileIcon(entry.file.name)}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {entry.file.name}
+                          </p>
+                          <p style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: 1 }}>
+                            {humanSize(entry.file.size)}
+                          </p>
+                          {entry.status === 'error' && (
+                            <p style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: 2 }}>{entry.error}</p>
+                          )}
+                        </div>
+                        {/* Status badge */}
+                        {entry.status === 'uploading' && (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--brand)', fontWeight: 700, flexShrink: 0 }}>
+                            ⏳ Uploading…
+                          </span>
+                        )}
+                        {entry.status === 'success' && (
+                          <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 700, flexShrink: 0 }}>
+                            ✓ Done
+                          </span>
+                        )}
+                        {entry.status === 'error' && (
+                          <span style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 700, flexShrink: 0 }}>
+                            ✗ Failed
+                          </span>
+                        )}
+                        {/* Remove button — only for pending files */}
+                        {entry.status === 'pending' && (
+                          <button type="button"
+                            onClick={() => removeEntry(entry.file.name)}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}
+                            aria-label={`Remove ${entry.file.name}`}>
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Post-upload summary */}
+                  {allDone && (
+                    <div style={{
+                      marginTop: 16, padding: '14px 18px', borderRadius: 10,
+                      background: hasFailed ? '#fef9c3' : '#f0fdf4',
+                      border: `1px solid ${hasFailed ? '#fbbf24' : '#86efac'}`,
+                    }}>
+                      <p style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 4 }}>
+                        {hasSucceeded && !hasFailed && '✅ All files uploaded successfully!'}
+                        {hasFailed && hasSucceeded && '⚠️ Some files failed — see above.'}
+                        {hasFailed && !hasSucceeded && '❌ All uploads failed — please try again.'}
+                      </p>
+                      <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                        {hasSucceeded && (
+                          <button className="btn btn-brand btn-sm"
+                            onClick={() => navigate(`/course/${selectedKb}`)}>
+                            Open Course
+                          </button>
+                        )}
+                        <button className="btn btn-outline btn-sm"
+                          onClick={() => {
+                            setEntries(prev => prev.filter(e => e.status !== 'success'));
+                            setAllDone(false);
+                          }}>
+                          {hasFailed ? 'Retry Failed Files' : 'Upload More'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -241,67 +379,38 @@ export function DocumentUpload() {
                 onChange={e => setUrl(e.target.value)}
                 placeholder="https://docs.python.org/3/tutorial/…" />
               <p className="form-hint">We'll fetch and process the page content automatically. JavaScript-rendered SPAs may not work.</p>
+              {urlError && <p style={{ color: '#dc2626', fontSize: '0.82rem', marginTop: 6 }}>{urlError}</p>}
             </div>
           )}
 
           {/* Knowledge base selector */}
           <div className="form-group" style={{ marginTop: 24 }}>
             <label className="form-label" htmlFor="kb-select">Target Knowledge Base</label>
-
             {!newKbMode ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select
-                  id="kb-select"
-                  className="form-select"
-                  style={{ flex: 1 }}
-                  value={selectedKb}
-                  onChange={e => setSelectedKb(e.target.value)}
-                >
-                  {kbs.map(kb => (
-                    <option key={kb.id} value={kb.id}>{kb.name}</option>
-                  ))}
+                <select id="kb-select" className="form-select" style={{ flex: 1 }}
+                  value={selectedKb} onChange={e => setSelectedKb(e.target.value)}>
+                  {kbs.map(kb => <option key={kb.id} value={kb.id}>{kb.name}</option>)}
                 </select>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={() => setNewKbMode(true)}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
+                <button type="button" className="btn btn-outline btn-sm"
+                  onClick={() => setNewKbMode(true)} style={{ whiteSpace: 'nowrap' }}>
                   ✚ New KB
                 </button>
               </div>
             ) : (
               <div style={{ background: 'var(--bg)', border: '1px solid var(--brand)', borderRadius: 8, padding: 16, marginTop: 4 }}>
                 <p style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: 12, color: 'var(--brand)' }}>✚ Create New Knowledge Base</p>
-                <input
-                  className="form-input"
-                  value={newKbName}
-                  onChange={e => setNewKbName(e.target.value)}
-                  placeholder="Knowledge base name *"
-                  style={{ marginBottom: 8 }}
-                  autoFocus
-                />
-                <input
-                  className="form-input"
-                  value={newKbDesc}
-                  onChange={e => setNewKbDesc(e.target.value)}
-                  placeholder="Description (optional)"
-                  style={{ marginBottom: 12 }}
-                />
+                <input className="form-input" value={newKbName} onChange={e => setNewKbName(e.target.value)}
+                  placeholder="Knowledge base name *" style={{ marginBottom: 8 }} autoFocus />
+                <input className="form-input" value={newKbDesc} onChange={e => setNewKbDesc(e.target.value)}
+                  placeholder="Description (optional)" style={{ marginBottom: 12 }} />
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    type="button"
-                    className="btn btn-brand btn-sm"
-                    onClick={handleCreateKb}
-                    disabled={!newKbName.trim() || creatingKb}
-                  >
+                  <button type="button" className="btn btn-brand btn-sm"
+                    onClick={handleCreateKb} disabled={!newKbName.trim() || creatingKb}>
                     {creatingKb ? '⏳ Creating…' : '✅ Create'}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    onClick={() => { setNewKbMode(false); setNewKbName(''); setNewKbDesc(''); }}
-                  >
+                  <button type="button" className="btn btn-outline btn-sm"
+                    onClick={() => { setNewKbMode(false); setNewKbName(''); setNewKbDesc(''); }}>
                     Cancel
                   </button>
                 </div>
@@ -309,23 +418,15 @@ export function DocumentUpload() {
             )}
           </div>
 
-          {/* Progress bar */}
-          {state === 'uploading' && (
-            <div style={{ margin: '16px 0' }}>
-              <div className="progress-bar-wrap" style={{ height: 10, borderRadius: 5 }}>
-                <div className="progress-bar-fill" style={{ width: `${progress}%`, transition: 'width 0.2s' }} />
-              </div>
-              <p className="progress-label" style={{ textAlign: 'center', marginTop: 6 }}>
-                {tab === 'url' ? 'Fetching and indexing…' : 'Processing…'} {progress}%
-              </p>
-            </div>
-          )}
-
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <button type="submit" className="btn btn-brand"
-              disabled={state === 'uploading' || newKbMode || (tab === 'file' ? !file : !url.trim()) || !selectedKb}>
-              {state === 'uploading' ? '⏳ Uploading…' : '⬆️ Upload & Index'}
+              disabled={uploading || newKbMode || (tab === 'file' ? !hasPending : !url.trim()) || !selectedKb}>
+              {uploading
+                ? '⏳ Uploading…'
+                : tab === 'file' && entries.length > 1 && hasPending
+                ? `⬆️ Upload ${entries.filter(e => e.status === 'pending').length} Files`
+                : '⬆️ Upload & Index'}
             </button>
             <button type="button" className="btn btn-outline" onClick={() => navigate('/content')}>
               Cancel
