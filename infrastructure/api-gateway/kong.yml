@@ -43,30 +43,38 @@ plugins:
 
 routes:
   # ── Internal service-to-service routes (no auth) ────────────────────────────
+  # strip_path: false preserves the full path so each service's router prefix
+  # (/api/internal/*, /api/v1/*) is received intact and matched correctly.
   - name: llm-internal
     service: llm-gateway
     paths: ["/api/internal/llm"]
+    strip_path: false
 
   - name: embeddings-internal
     service: embedding-service
     paths: ["/api/internal/embeddings"]
+    strip_path: false
 
   - name: rag-internal
     service: rag-pipeline
     paths: ["/api/internal/rag"]
+    strip_path: false
 
   - name: grader-internal
     service: confidence-grader
     paths: ["/api/internal/grader"]
+    strip_path: false
 
   - name: agent-internal
     service: agent-reasoning
     paths: ["/api/internal/agent"]
+    strip_path: false
 
   # ── Public-facing API routes (JWT auth required) ─────────────────────────────
   - name: chat-api
     service: chat-orchestrator
     paths: ["/api/v1/chat"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -74,6 +82,7 @@ routes:
   - name: content-api
     service: content-ingestion
     paths: ["/api/v1/content"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -81,6 +90,7 @@ routes:
   - name: knowledge-bases-api
     service: content-management
     paths: ["/api/v1/knowledge-bases"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -88,6 +98,7 @@ routes:
   - name: documents-api
     service: content-management
     paths: ["/api/v1/documents"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -95,18 +106,21 @@ routes:
   - name: stats-api
     service: content-management
     paths: ["/api/v1/stats"]
+    strip_path: false
     plugins:
       - name: jwt
 
   - name: analytics-api
     service: analytics
     paths: ["/api/v1/analytics"]
+    strip_path: false
     plugins:
       - name: jwt
 
   - name: learner-api
     service: learner-profile
     paths: ["/api/v1/learner"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -114,6 +128,7 @@ routes:
   - name: admin-api
     service: admin-config
     paths: ["/api/v1/admin"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -121,6 +136,7 @@ routes:
   - name: assessments-api
     service: assessment
     paths: ["/api/v1/assessments"]
+    strip_path: false
     plugins:
       - name: rate-limiting
       - name: jwt
@@ -128,6 +144,7 @@ routes:
   - name: audit-api
     service: audit
     paths: ["/api/v1/audit"]
+    strip_path: false
     plugins:
       - name: jwt
 
