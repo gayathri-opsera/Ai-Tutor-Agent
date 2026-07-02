@@ -282,5 +282,24 @@ class ContentManagementService:
         )
 
 
+    async def platform_stats(self) -> dict:
+        """Return live counts for the home-page stats strip."""
+        async with self._pool.acquire() as conn:
+            kb_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM knowledge_bases WHERE is_active = TRUE"
+            )
+            doc_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM documents WHERE status = 'active'"
+            )
+            chunk_count = await conn.fetchval(
+                "SELECT COALESCE(SUM(chunk_count), 0) FROM documents WHERE status = 'active'"
+            )
+        return {
+            "knowledge_bases": int(kb_count or 0),
+            "documents_indexed": int(doc_count or 0),
+            "chunks_in_vector_db": int(chunk_count or 0),
+        }
+
+
 async def create_pool() -> asyncpg.Pool:
     return await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)

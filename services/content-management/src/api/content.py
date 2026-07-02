@@ -20,6 +20,15 @@ class CreateDoc(BaseModel):
     content_type: str = "text"
 
 
+# ── Platform stats (home page) ────────────────────────────────────────────────
+
+@router.get("/stats")
+async def platform_stats(request: Request):
+    """Live KB / document / chunk counts for the home-page stats strip."""
+    svc = request.app.state.cms
+    return await svc.platform_stats()
+
+
 # ── Knowledge Bases ────────────────────────────────────────────────────────────
 
 @router.post("/knowledge-bases", status_code=201)

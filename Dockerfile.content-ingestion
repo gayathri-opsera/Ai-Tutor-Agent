@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Use /app/.cache so the non-root runtime user (UID 1000) can write model files
+ENV HF_HOME=/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
+
 # ── Shared libraries ─────────────────────────────────────────────────────────
 COPY libs/kafka/src         /app/libs/kafka/src
 COPY libs/kafka/requirements.txt /app/libs/kafka/requirements.txt
@@ -27,13 +31,16 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # ── Pre-download the Whisper "base" model at build time (best-effort) ────────
 # Bakes ~145 MB into the image so transcription works offline.
-# Falls back gracefully to a runtime download if the build environment has no
-# network access to HuggingFace (CI sandboxes, air-gapped runners, etc.).
-RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" 2>&1 || \
+# Model is stored in /app/.cache so the non-root user (UID 1000) can access it.
+RUN mkdir -p /app/.cache/huggingface && \
+    python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')" 2>&1 || \
     echo "WARNING: faster-whisper model pre-download skipped — will download on first use at runtime."
 
 # ── Service source ───────────────────────────────────────────────────────────
 COPY services/content-ingestion/src /app/src
+
+# Ensure the non-root user (UID 1000) can write to the cache dir
+RUN chown -R 1000:1000 /app/.cache 2>/dev/null || true
 
 # ── Python path includes all shared libs ────────────────────────────────────
 ENV PYTHONPATH=/app:/app/libs/kafka/src:/app/libs/vector-db/src:/app/libs/auth/src:/app/libs/cache/src:/app/libs/logging/src:/app/libs/metrics/src

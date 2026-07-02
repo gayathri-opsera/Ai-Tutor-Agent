@@ -3,32 +3,40 @@ import { useNavigate } from 'react-router-dom';
 import { CourseCard } from '../../components/CourseCard';
 
 interface KB { id: string; name: string; description: string; }
+interface Stats { knowledge_bases: number; documents_indexed: number; chat_sessions: number; chunks_in_vector_db: number; }
 
 const EMOJIS = ['📚', '🤖', '🧠', '💡', '🔬', '🎯', '⚡', '🌐'];
 const FEATURED_TAGS = ['Beginner Friendly', 'Popular', 'New', 'Advanced'];
 
-const STATS = [
-  { icon: '🎓', value: '2', label: 'Knowledge Bases' },
-  { icon: '📄', value: '3', label: 'Documents Indexed' },
-  { icon: '💬', value: '1', label: 'Chat Sessions' },
-  { icon: '⚡', value: '4', label: 'Chunks in Vector DB' },
-];
-
 export function HomePage() {
   const [kbs, setKbs] = useState<KB[]>([]);
+  const [stats, setStats] = useState<Stats>({ knowledge_bases: 0, documents_indexed: 0, chat_sessions: 0, chunks_in_vector_db: 0 });
   const navigate = useNavigate();
 
   useEffect(() => {
+    // Fetch knowledge bases
     fetch('/api/v1/knowledge-bases?organization_id=default')
       .then(r => r.json())
       .then(d => setKbs(d.items ?? d ?? []))
       .catch(() => {
-        // Fallback to seeded sample data for demo
         setKbs([
           { id: 'bbbbbbbb-0001-0000-0000-000000000001', name: 'Python Fundamentals', description: 'Core Python programming: variables, functions, OOP, and async patterns.' },
           { id: 'bbbbbbbb-0002-0000-0000-000000000002', name: 'Machine Learning Basics', description: 'Intro to supervised, unsupervised, and reinforcement learning.' },
         ]);
       });
+
+    // Fetch real-time platform stats
+    Promise.all([
+      fetch('/api/v1/stats').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/v1/analytics/summary').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([contentStats, analyticsStats]) => {
+      setStats({
+        knowledge_bases: contentStats?.knowledge_bases ?? 0,
+        documents_indexed: contentStats?.documents_indexed ?? 0,
+        chunks_in_vector_db: contentStats?.chunks_in_vector_db ?? 0,
+        chat_sessions: analyticsStats?.session_count ?? 0,
+      });
+    });
   }, []);
 
   return (
@@ -59,10 +67,15 @@ export function HomePage() {
       <div className="container">
         <div className="section">
           <div className="stats-row">
-            {STATS.map(s => (
+            {[
+              { icon: '🎓', value: stats.knowledge_bases, label: 'Knowledge Bases' },
+              { icon: '📄', value: stats.documents_indexed, label: 'Documents Indexed' },
+              { icon: '💬', value: stats.chat_sessions, label: 'Chat Sessions' },
+              { icon: '⚡', value: stats.chunks_in_vector_db, label: 'Chunks in Vector DB' },
+            ].map(s => (
               <div className="stat-card" key={s.label}>
                 <div className="stat-card-icon">{s.icon}</div>
-                <div className="stat-card-value">{s.value}</div>
+                <div className="stat-card-value">{s.value.toLocaleString()}</div>
                 <div className="stat-card-label">{s.label}</div>
               </div>
             ))}
