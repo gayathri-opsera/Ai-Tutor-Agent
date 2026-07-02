@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: llm-gateway
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-llm-gateway:dev-2b331e5-20260701143612
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-llm-gateway:dev-c6a8e99-20260702020333
