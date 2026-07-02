@@ -55,12 +55,37 @@ async function fetchOrSeedAssessment(kbId: string, kbName: string): Promise<Asse
   const listResp = await fetch(`${ASSESSMENT_API}?knowledge_base_id=${kbId}`);
   const { items } = await listResp.json() as { items: { id: string; assessment_type: string }[] };
 
+  // Use existing assessment if it has real questions (not the old generic placeholder seed)
   if (items.length > 0) {
     const takeResp = await fetch(`${ASSESSMENT_API}/${items[0].id}/take`);
+    const existing = await takeResp.json() as Assessment;
+    const isGenericSeed = existing.questions?.some(q =>
+      q.text.includes('What is the main topic covered') ||
+      q.text.includes('What type of assessment is this')
+    );
+    if (!isGenericSeed) return existing;
+    // Generic seed detected — fall through to AI generation below
+  }
+
+  // Generate KB-specific questions using the AI
+  const genResp = await fetch(`${ASSESSMENT_API}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      knowledge_base_id: kbId,
+      topic: kbName,
+      count: 5,
+      difficulty: 'medium',
+    }),
+  });
+
+  if (genResp.ok) {
+    const generated = await genResp.json() as { id: string };
+    const takeResp = await fetch(`${ASSESSMENT_API}/${generated.id}/take`);
     return takeResp.json();
   }
 
-  // No assessment yet — seed a starter one
+  // Fallback: create a minimal self-assessment if AI generation fails
   const created = await fetch(ASSESSMENT_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -71,17 +96,17 @@ async function fetchOrSeedAssessment(kbId: string, kbName: string): Promise<Asse
       questions: [
         {
           id: crypto.randomUUID(),
-          text: `What is the main topic covered in the "${kbName}" knowledge base?`,
+          text: `How would you rate your current knowledge of "${kbName}"?`,
           question_type: 'multiple_choice',
-          options: [kbName, 'Web development', 'Database design', 'None of the above'],
+          options: ['Expert (can teach others)', 'Intermediate (comfortable)', 'Beginner (some exposure)', 'No knowledge'],
           correct_index: 0,
         },
         {
           id: crypto.randomUUID(),
-          text: 'What type of assessment is this?',
+          text: `What are you hoping to learn from the "${kbName}" course?`,
           question_type: 'multiple_choice',
-          options: ['Post-training', 'Pre-training', 'Certification', 'Practice'],
-          correct_index: 1,
+          options: ['Core concepts and fundamentals', 'Advanced techniques', 'Practical application', 'All of the above'],
+          correct_index: 3,
         },
         {
           id: crypto.randomUUID(),

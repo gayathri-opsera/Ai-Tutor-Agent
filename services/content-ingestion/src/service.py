@@ -85,7 +85,7 @@ class DocumentStatus(str, Enum):
     UPLOADING = "uploading"
     PROCESSING = "processing"
     ACTIVE = "active"
-    ERROR = "error"
+    ERROR = "failed"          # maps to "failed" in document_status_enum
     PENDING_REVIEW = "pending_review"   # low-quality transcription awaiting creator approval
 
 
@@ -242,9 +242,10 @@ class ContentIngestionService:
         chunks = chunk_text(extracted_text) if extracted_text.strip() else []
 
         # 2. Persist to documents table
+        # "error" is not a valid document_status_enum value — use "failed" instead
         db_status = (
             "pending_review" if initial_status == DocumentStatus.PENDING_REVIEW
-            else ("error" if initial_status == DocumentStatus.ERROR else "active")
+            else ("failed" if initial_status == DocumentStatus.ERROR else "active")
         )
         async with self._pool.acquire() as conn:
             await conn.execute(

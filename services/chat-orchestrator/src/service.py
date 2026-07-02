@@ -327,7 +327,7 @@ class ChatOrchestratorService:
         )
         await self.cache.set(session)
         await self.repository.save_session(session)
-        # fire analytics (best-effort)
+        # fire analytics + increment learner session count (best-effort)
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 await client.post(
@@ -337,6 +337,14 @@ class ChatOrchestratorService:
                         "user_id": user_id,
                         "metadata": {"session_id": session.id, "knowledge_base_id": knowledge_base_id},
                     },
+                )
+        except Exception:
+            pass
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    f"{LEARNER_PROFILE_URL}/api/v1/learner/session",
+                    params={"user_id": user_id},
                 )
         except Exception:
             pass
@@ -547,6 +555,22 @@ class ChatOrchestratorService:
                             "source_type": source_type,
                             "source_count": len(grounded_sources),
                         },
+                    },
+                )
+        except Exception:
+            pass
+
+        # 11. Update learner profile — increment query count + track topic (best-effort)
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    f"{LEARNER_PROFILE_URL}/api/v1/learner/topic",
+                    params={"user_id": session.user_id},
+                    json={
+                        "topic": user_message[:80],
+                        "level": "in_progress",
+                        "score": min(float(confidence_score), 0.9),
+                        "knowledge_base_id": session.knowledge_base_id,
                     },
                 )
         except Exception:

@@ -69,3 +69,11 @@ async def get_course_progress(kb_id: str, user_id: str = "demo-user", request: R
     """Return per-lesson completion state for a user within a knowledge base."""
     svc = request.app.state.profile_service
     return await svc.get_course_progress(user_id, kb_id)
+
+
+@router.post("/session")
+async def increment_session(user_id: str = "demo-user", request: Request = None):
+    """Increment the session counter for a learner — called by chat orchestrator on session create."""
+    svc = request.app.state.profile_service
+    await svc.increment_session(user_id)
+    return {"ok": True}
