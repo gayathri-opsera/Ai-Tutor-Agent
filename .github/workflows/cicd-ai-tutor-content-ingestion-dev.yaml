@@ -6,6 +6,7 @@ on:
     paths:
       - services/content-ingestion/**
       - .opsera-ai-tutor/Dockerfile.service
+      - Dockerfile.content-ingestion
 
   workflow_dispatch:
     inputs:
@@ -77,9 +78,7 @@ jobs:
       - name: Build Docker Image
         run: |
           docker build \
-            -f Dockerfile.service \
-            --build-arg SERVICE=content-ingestion \
-            --build-arg PORT=8003 \
+            -f Dockerfile.content-ingestion \
             -t ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
             .
 

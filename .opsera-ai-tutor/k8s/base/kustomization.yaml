@@ -15,6 +15,7 @@ resources:
   - weaviate/service.yaml
   - keycloak/deployment.yaml
   - keycloak/service.yaml
+  - minio/deployment.yaml
   # Frontend
   - frontend/deployment.yaml
   - frontend/service.yaml
