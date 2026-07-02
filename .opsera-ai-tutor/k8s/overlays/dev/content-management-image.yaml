@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: content-management
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-management:dev-01b025a-20260702175536
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-management:dev-5781973-20260702234305
