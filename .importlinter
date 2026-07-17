@@ -1,0 +1,248 @@
+# import-linter root configuration
+# Enforces the canonical layer hierarchy across all 13 backend services and 6 shared libs.
+# Layer order (most independent → most dependent):
+#   config → model → repository → service → controller
+#
+# Run from repo root:
+#   lint-imports              # check all contracts
+#   lint-imports --show-timings
+#
+# Or via Makefile:
+#   make lint-layers
+#
+# Each service runs in its own PYTHONPATH context (pythonpath = src in pytest.ini),
+# so we define contracts per-service using source_roots to scope each analysis.
+# Services with hyphenated directory names are listed with their resolved source root.
+#
+# Related: WO-009 (REQ-009) — Architectural layer enforcement
+# ForgeScore dimension: trust_boundaries (target ≥ 80)
+
+[importlinter]
+root_packages =
+    src
+
+# Source roots: each service directory is listed so `src` resolves per-service
+# import-linter evaluates each contract against its own source_roots context
+source_roots =
+    services/chat-orchestrator
+    services/llm-gateway
+    services/rag-pipeline
+    services/embedding-service
+    services/content-ingestion
+    services/content-management
+    services/agent-reasoning
+    services/confidence-grader
+    services/admin-config
+    services/analytics
+    services/assessment
+    services/audit
+    services/learner-profile
+    libs/auth
+    libs/cache
+    libs/kafka
+    libs/logging
+    libs/metrics
+    libs/vector-db
+
+# ─── chat-orchestrator ──────────────────────────────────────────────────────
+[importlinter:contract:chat-orchestrator-layers]
+name = chat-orchestrator: enforce controller > service > repository layer hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+    src
+include_paths =
+    services/chat-orchestrator
+
+# ─── llm-gateway ────────────────────────────────────────────────────────────
+[importlinter:contract:llm-gateway-layers]
+name = llm-gateway: enforce controller > service/router > providers/middleware hierarchy
+type = layers
+layers =
+    src.api
+    src.router
+    src.providers
+    src.middleware
+    src.kafka
+    src.circuit_breaker
+    src.schemas
+    src.config
+include_paths =
+    services/llm-gateway
+
+# ─── rag-pipeline ───────────────────────────────────────────────────────────
+[importlinter:contract:rag-pipeline-layers]
+name = rag-pipeline: enforce controller > service > vector_client/search hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+    src.hybrid_search
+    src.reranker
+    src.vector_client
+    src.config
+include_paths =
+    services/rag-pipeline
+
+# ─── embedding-service ──────────────────────────────────────────────────────
+[importlinter:contract:embedding-service-layers]
+name = embedding-service: enforce controller > service > backends hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+    src.backends
+    src.schemas
+    src.config
+include_paths =
+    services/embedding-service
+
+# ─── content-ingestion ──────────────────────────────────────────────────────
+[importlinter:contract:content-ingestion-layers]
+name = content-ingestion: enforce controller > service > processing utilities hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+    src.chunking
+    src.dedup
+    src.transcription
+    src.url_ingestion
+    src.quality_flag
+include_paths =
+    services/content-ingestion
+
+# ─── content-management ─────────────────────────────────────────────────────
+[importlinter:contract:content-management-layers]
+name = content-management: enforce controller > service hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+include_paths =
+    services/content-management
+
+# ─── agent-reasoning ────────────────────────────────────────────────────────
+[importlinter:contract:agent-reasoning-layers]
+name = agent-reasoning: enforce controller > agent > web_search hierarchy
+type = layers
+layers =
+    src.api
+    src.agent
+    src.web_search
+include_paths =
+    services/agent-reasoning
+
+# ─── confidence-grader ──────────────────────────────────────────────────────
+[importlinter:contract:confidence-grader-layers]
+name = confidence-grader: enforce controller > grader hierarchy
+type = layers
+layers =
+    src.api
+    src.grader
+include_paths =
+    services/confidence-grader
+
+# ─── admin-config ───────────────────────────────────────────────────────────
+[importlinter:contract:admin-config-layers]
+name = admin-config: enforce controller > service > retention hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+    src.retention
+include_paths =
+    services/admin-config
+
+# ─── analytics ──────────────────────────────────────────────────────────────
+[importlinter:contract:analytics-layers]
+name = analytics: enforce controller > service hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+include_paths =
+    services/analytics
+
+# ─── assessment ─────────────────────────────────────────────────────────────
+[importlinter:contract:assessment-layers]
+name = assessment: enforce controller > service hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+include_paths =
+    services/assessment
+
+# ─── audit ──────────────────────────────────────────────────────────────────
+[importlinter:contract:audit-layers]
+name = audit: enforce logger independence (no controller/service imports from logger)
+type = forbidden
+source_modules =
+    src.logger
+forbidden_modules =
+    src.main
+include_paths =
+    services/audit
+
+# ─── learner-profile ────────────────────────────────────────────────────────
+[importlinter:contract:learner-profile-layers]
+name = learner-profile: enforce controller > service hierarchy
+type = layers
+layers =
+    src.api
+    src.service
+include_paths =
+    services/learner-profile
+
+# ─── Shared Libraries: no imports from service/controller layers ─────────────
+#
+# The 6 shared libs (auth, cache, kafka, logging, metrics, vector-db) are
+# infrastructure utilities. They must NOT import from any service's api or
+# service layer — enforced via forbidden contracts below.
+#
+# Each lib is analyzed with its own source root so `src` resolves correctly.
+
+[importlinter:contract:libs-independence]
+name = Shared libs must not import from any service api or service modules
+type = forbidden
+source_modules =
+    src
+forbidden_modules =
+    src.api
+    src.service
+include_paths =
+    libs/auth
+    libs/cache
+    libs/kafka
+    libs/logging
+    libs/metrics
+    libs/vector-db
+
+# ─── libs/auth internal layers ──────────────────────────────────────────────
+[importlinter:contract:libs-auth-layers]
+name = libs/auth: enforce middleware > decorators > jwt_validator > config
+type = layers
+layers =
+    src.middleware
+    src.decorators
+    src.jwt_validator
+    src.config
+include_paths =
+    libs/auth
+
+# ─── libs/kafka internal layers ─────────────────────────────────────────────
+[importlinter:contract:libs-kafka-layers]
+name = libs/kafka: enforce producer/consumer > schemas > config/topics
+type = layers
+layers =
+    src.producer
+    src.consumer
+    src.health
+    src.local_bus
+    src.schemas
+    src.topics
+    src.config
+include_paths =
+    libs/kafka

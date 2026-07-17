@@ -1,4 +1,4 @@
-.PHONY: help up down up-kafka logs ps build clean test setup
+.PHONY: help up down up-kafka logs ps build clean test lint-layers setup
 
 COMPOSE      = docker compose
 COMPOSE_KAFKA = docker compose -f docker-compose.yml -f docker-compose.kafka.yml
@@ -95,3 +95,41 @@ health:      ## Check health of all services
 
 clean:       ## Remove all containers, images, and volumes
 	$(COMPOSE) down -v --rmi local
+
+lint-layers: ## Check architectural layer violations across all services and libs (REQ-009)
+	@echo "Checking architectural layer contracts via import-linter..."
+	@echo "Install dev deps first: pip install -r dev-requirements.txt"
+	@echo ""
+	@FAILED=0; \
+	for svc in services/chat-orchestrator services/llm-gateway services/rag-pipeline \
+	  services/embedding-service services/content-ingestion services/content-management \
+	  services/agent-reasoning services/confidence-grader services/admin-config \
+	  services/analytics services/assessment services/audit services/learner-profile; do \
+	  svc_name=$$(basename $$svc); \
+	  echo "--- $$svc_name ---"; \
+	  result=$$(cd $$svc && PYTHONPATH=src lint-imports --config ../../.importlinter 2>&1); \
+	  if echo "$$result" | grep -q "KEPT\|Broken\|ERROR"; then \
+	    echo "$$result" | grep -E "KEPT|Broken|ERROR|Violation"; \
+	    FAILED=$$((FAILED + 1)); \
+	  else \
+	    echo "  ✅ No violations"; \
+	  fi; \
+	done; \
+	for lib in libs/auth libs/cache libs/kafka libs/logging libs/metrics libs/vector-db; do \
+	  lib_name=$$(basename $$lib); \
+	  echo "--- lib:$$lib_name ---"; \
+	  result=$$(cd $$lib && PYTHONPATH=src lint-imports --config ../../.importlinter 2>&1); \
+	  if echo "$$result" | grep -q "KEPT\|Broken\|ERROR"; then \
+	    echo "$$result" | grep -E "KEPT|Broken|ERROR|Violation"; \
+	    FAILED=$$((FAILED + 1)); \
+	  else \
+	    echo "  ✅ No violations"; \
+	  fi; \
+	done; \
+	echo ""; \
+	if [ "$$FAILED" -gt 0 ]; then \
+	  echo "❌ $$FAILED service(s) have layer violations — see above"; \
+	  exit 1; \
+	else \
+	  echo "✅ All architectural layer contracts satisfied"; \
+	fi
