@@ -120,3 +120,53 @@ class AnalyticsService:
                 for r in courses
             ],
         }
+
+    async def admin_dashboard(self) -> dict[str, Any]:
+        """Return platform-wide aggregate metrics for the admin dashboard."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            total_learners = await conn.fetchval(
+                "SELECT COUNT(DISTINCT user_id) FROM learner_topic_progress"
+            )
+            total_courses = await conn.fetchval(
+                "SELECT COUNT(*) FROM knowledge_bases WHERE is_active = true"
+            )
+            total_documents = await conn.fetchval(
+                "SELECT COUNT(*) FROM documents WHERE status = 'active'"
+            )
+            total_chat_sessions = await conn.fetchval(
+                "SELECT COUNT(*) FROM chat_sessions"
+            )
+            # Approval status distribution
+            approval_rows = await conn.fetch(
+                """
+                SELECT approval_status::text, COUNT(*) AS cnt
+                FROM knowledge_bases
+                WHERE is_active = true
+                GROUP BY approval_status
+                """
+            )
+            # Top 10 most enrolled courses
+            top_courses = await conn.fetch(
+                """
+                SELECT kb.name AS title, COUNT(DISTINCT ltp.user_id) AS enrollments
+                FROM knowledge_bases kb
+                LEFT JOIN learner_topic_progress ltp ON ltp.knowledge_base_id = kb.id
+                WHERE kb.is_active = true AND kb.approval_status = 'approved'
+                GROUP BY kb.id, kb.name
+                ORDER BY enrollments DESC
+                LIMIT 10
+                """
+            )
+
+        return {
+            "total_learners":       int(total_learners or 0),
+            "total_courses":        int(total_courses or 0),
+            "total_documents":      int(total_documents or 0),
+            "total_chat_sessions":  int(total_chat_sessions or 0),
+            "approval_status_distribution": {r["approval_status"]: int(r["cnt"]) for r in approval_rows},
+            "top_courses_by_enrollment": [
+                {"title": r["title"], "enrollments": int(r["enrollments"])}
+                for r in top_courses
+            ],
+        }

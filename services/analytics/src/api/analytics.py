@@ -41,3 +41,17 @@ async def creator_dashboard(request: Request):
     is_admin = bool(user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", [])))
     creator_filter = None if is_admin else caller_sub
     return await svc.creator_dashboard(creator_keycloak_id=creator_filter)
+
+
+@router.get("/admin/dashboard")
+async def admin_dashboard(request: Request):
+    """Return platform-wide aggregate metrics. Requires Admin or SuperAdmin role."""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", [])):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Admin or SuperAdmin role required")
+    svc = request.app.state.analytics
+    return await svc.admin_dashboard()

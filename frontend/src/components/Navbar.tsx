@@ -148,6 +148,13 @@ export function Navbar() {
                   </Link>
                 )}
                 {user?.isAdmin && (
+                  <Link to="/admin/dashboard"
+                    style={{ display: 'block', padding: '9px 16px', fontSize: '0.85rem', color: 'var(--text)' }}
+                    onClick={() => setDropOpen(false)}>
+                    📊 Platform Dashboard
+                  </Link>
+                )}
+                {user?.isAdmin && (
                   <Link to="/admin/users"
                     style={{ display: 'block', padding: '9px 16px', fontSize: '0.85rem', color: 'var(--text)' }}
                     onClick={() => setDropOpen(false)}>

@@ -14,6 +14,7 @@ import { LearnerProgressDashboard } from './pages/LearnerProgress/LearnerProgres
 import { AdminConfigPanel } from './pages/AdminConfig/AdminConfigPanel';
 import { AdminMonitoringDashboard } from './pages/AdminMonitoring/AdminMonitoringDashboard';
 import { AdminUsersPage } from './pages/AdminUsers/AdminUsersPage';
+import { AdminDashboardPage } from './pages/AdminDashboard/AdminDashboardPage';
 import { CreatorDashboardPage } from './pages/CreatorDashboard/CreatorDashboardPage';
 import { AssessmentPage } from './pages/Assessment/AssessmentPage';
 
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="/admin/config"      element={<AdminConfigPanel />} />
             <Route path="/admin/monitoring"  element={<AdminMonitoringDashboard />} />
             <Route path="/admin/users"       element={<AdminUsersPage />} />
+            <Route path="/admin/dashboard"   element={<AdminDashboardPage />} />
           </>}
 
           <Route path="*" element={<Navigate to="/" replace />} />
