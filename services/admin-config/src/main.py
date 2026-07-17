@@ -8,7 +8,9 @@ from contextlib import asynccontextmanager
 import asyncpg
 from fastapi import FastAPI
 
-from src.api.config import router
+from src.api.auth import router as auth_router
+from src.api.config import router as config_router
+from src.repository import UserRepository
 from src.service import AdminConfigService, DB_DSN
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -18,12 +20,14 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
     app.state.admin_config = AdminConfigService(pool=pool)
+    app.state.user_repo = UserRepository(pool=pool)
     yield
     await pool.close()
 
 
 app = FastAPI(title="Admin Configuration Service", lifespan=lifespan)
-app.include_router(router)
+app.include_router(config_router)
+app.include_router(auth_router)
 
 
 @app.get("/health")
