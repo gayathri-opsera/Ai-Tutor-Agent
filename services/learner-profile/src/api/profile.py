@@ -77,3 +77,10 @@ async def increment_session(user_id: str = "demo-user", request: Request = None)
     svc = request.app.state.profile_service
     await svc.increment_session(user_id)
     return {"ok": True}
+
+
+@router.get("/dashboard")
+async def get_dashboard(user_id: str = "demo-user", request: Request = None):
+    """Aggregated learner dashboard: completion %, assessment scores, time, streak, topic progress."""
+    svc = request.app.state.profile_service
+    return await svc.get_dashboard(user_id)

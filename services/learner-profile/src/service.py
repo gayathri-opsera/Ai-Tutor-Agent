@@ -182,3 +182,76 @@ class LearnerProfileService:
             "not_started": [t["topic"] for t in topics if t["status"] == "not_started"],
             "topics": topics,
         }
+
+    async def get_dashboard(self, user_id: str) -> dict[str, Any]:
+        """Aggregate learner dashboard data for WO-247."""
+        profile = await self.get_or_create(user_id)
+        pool = await self._pool_()
+        async with pool.acquire() as conn:
+            # Assessment scores
+            score_rows = await conn.fetch(
+                """
+                SELECT id AS assessment_id,
+                       knowledge_base_id,
+                       assessment_type,
+                       created_at AS submitted_at,
+                       COALESCE(
+                         (SELECT AVG((answer->>'score')::numeric)
+                          FROM jsonb_array_elements(COALESCE(questions_json::jsonb, '[]'::jsonb)) AS answer
+                          WHERE answer->>'score' IS NOT NULL),
+                         0
+                       ) AS score
+                FROM local_assessments
+                WHERE id IN (
+                    SELECT assessment_id FROM local_assessment_results WHERE user_id = $1
+                )
+                ORDER BY created_at DESC
+                """,
+                user_id,
+            )
+            # Lesson progress for completion %
+            lesson_rows = await conn.fetch(
+                "SELECT status FROM local_lesson_progress WHERE user_id = $1",
+                user_id,
+            )
+            # Topic scores for topic breakdown
+            topic_rows = await conn.fetch(
+                "SELECT topic, score, knowledge_base_id FROM local_topic_progress WHERE user_id = $1",
+                user_id,
+            )
+
+        total_lessons    = len(lesson_rows)
+        completed_lessons = sum(1 for r in lesson_rows if r["status"] == "completed")
+        overall_pct = round((completed_lessons / total_lessons) * 100, 1) if total_lessons else 0.0
+
+        assessment_scores = [
+            {
+                "assessment_id":    str(r["assessment_id"]),
+                "knowledge_base_id": str(r["knowledge_base_id"]) if r["knowledge_base_id"] else None,
+                "score":             round(float(r["score"]), 1),
+                "assessment_type":   r["assessment_type"],
+                "submitted_at":      r["submitted_at"].isoformat() if r["submitted_at"] else None,
+            }
+            for r in score_rows
+        ]
+
+        return {
+            "user_id":                    user_id,
+            "overall_completion_percent": overall_pct,
+            "assessment_scores":          assessment_scores,
+            "time_on_platform_minutes":   int(profile.get("time_on_platform_minutes") or 0),
+            "streak": {
+                "current_streak_days": int(profile.get("current_streak_days") or 0),
+                "longest_streak_days": int(profile.get("longest_streak_days") or 0),
+                "last_active_date":    profile["last_active_date"].isoformat()
+                                       if profile.get("last_active_date") else None,
+            },
+            "topic_progress": [
+                {
+                    "topic":            r["topic"],
+                    "score":            round(float(r["score"]), 1),
+                    "knowledge_base_id": str(r["knowledge_base_id"]) if r["knowledge_base_id"] else None,
+                }
+                for r in topic_rows
+            ],
+        }
