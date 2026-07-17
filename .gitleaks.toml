@@ -1,0 +1,49 @@
+# Gitleaks configuration for ai-tutor-agent.
+# Controls allowlisting of known false-positive patterns so that real secrets
+# are still detected while noisy test/CI artifacts do not block the pipeline.
+#
+# To add a new entry: document the justification with `description`, include
+# the specific pattern or path, and get it reviewed before merging.
+
+title = "ai-tutor-agent gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlist]]
+description = "Kubernetes manifest placeholder values (not real credentials)"
+regexes = [
+  '''PLACEHOLDER_ECR_URI_[A-Z_]+''',
+  '''<YOUR_[A-Z_]+_HERE>''',
+]
+
+[[allowlist]]
+description = "ArgoCD manifest template variables"
+regexes = [
+  '''\$\{[A-Z_]+\}''',
+]
+paths = [
+  '''.opsera-ai-tutor/k8s/.*''',
+]
+
+[[allowlist]]
+description = "Test fixture files may contain synthetic credentials for unit testing — not real secrets"
+paths = [
+  '''.*tests/fixtures/.*''',
+  '''.*tests/.*fixture.*''',
+]
+
+[[allowlist]]
+description = "OpenAPI baseline schemas do not contain credentials"
+paths = [
+  '''libs/contracts/openapi/.*\.json''',
+]
+
+[[allowlist]]
+description = "GitHub Actions example values in workflow documentation"
+paths = [
+  '''.github/workflows/.*''',
+]
+regexes = [
+  '''example\.com''',
+]
