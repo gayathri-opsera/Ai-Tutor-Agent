@@ -44,10 +44,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
 
+  architectural-lint:
+    name: "02 - Architectural Lint"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    needs: [security-scan]
+    with:
+      service_path: services/content-ingestion
+
   build-image:
     name: "02 - Build Image"
     runs-on: ubuntu-latest
-    needs: [security-scan]
+    needs: [security-scan, architectural-lint]
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
       ecr_uri: ${{ steps.ecr.outputs.uri }}
