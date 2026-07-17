@@ -10,6 +10,7 @@ import { MyLearningPage } from './pages/MyLearning/MyLearningPage';
 import { KnowledgeBaseList } from './pages/ContentManagement/KnowledgeBaseList';
 import { DocumentUpload } from './pages/ContentManagement/DocumentUpload';
 import { DocumentStatus } from './pages/ContentManagement/DocumentStatus';
+import { CreatorCourseManagement } from './pages/ContentManagement/CreatorCourseManagement';
 import { LearnerProgressDashboard } from './pages/LearnerProgress/LearnerProgressDashboard';
 import { AdminConfigPanel } from './pages/AdminConfig/AdminConfigPanel';
 import { AdminMonitoringDashboard } from './pages/AdminMonitoring/AdminMonitoringDashboard';
@@ -58,6 +59,9 @@ export default function App() {
           {/* ── Creator ────────────────────────────────────────── */}
           {(user.isCreator || isAdmin) && (
             <Route path="/creator/dashboard" element={<CreatorDashboardPage />} />
+          )}
+          {(user.isCreator || isAdmin) && (
+            <Route path="/creator/courses" element={<CreatorCourseManagement />} />
           )}
 
           {/* ── Admin (role-gated) ──────────────────────────── */}

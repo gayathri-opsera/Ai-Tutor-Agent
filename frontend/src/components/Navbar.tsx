@@ -66,11 +66,9 @@ export function Navbar() {
               className={`navbar-link${location.pathname === '/content/upload' ? ' active' : ''}`}>
               ⬆️ Upload
             </Link>
-            <Link to="/content?create=1"
-              className="navbar-link"
-              style={{ color: '#f9a825' }}
-            >
-              ✚ Create Course
+            <Link to="/creator/courses"
+              className={`navbar-link${location.pathname === '/creator/courses' ? ' active' : ''}`}>
+              📋 My Courses
             </Link>
             <Link to="/creator/dashboard"
               className={`navbar-link${location.pathname === '/creator/dashboard' ? ' active' : ''}`}>
