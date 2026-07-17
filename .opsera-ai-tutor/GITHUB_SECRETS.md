@@ -53,6 +53,7 @@ All secrets below must be added to your GitHub repository before running any wor
 | `S3_ACCESS_KEY` | Your S3/MinIO key | For production use AWS IAM, for dev use MinIO |
 | `S3_SECRET_KEY` | Your S3/MinIO secret | Keep confidential |
 | `S3_ENDPOINT` | `https://s3.amazonaws.com` | For AWS S3; use MinIO URL for local dev |
+| `SLACK_WEBHOOK_URL` | `https://hooks.slack.com/services/T.../B.../...` | Incoming webhook URL for deployment notifications; create at api.slack.com/apps |
 
 ---
 
@@ -94,6 +95,7 @@ gh secret set S3_SECRET_KEY            --body "$S3_SECRET_KEY"            --repo
 gh secret set S3_ENDPOINT              --body "https://s3.amazonaws.com"  --repo "$REPO"
 gh secret set AZURE_OPENAI_API_KEY     --body ""                          --repo "$REPO"
 gh secret set AZURE_OPENAI_ENDPOINT    --body ""                          --repo "$REPO"
+gh secret set SLACK_WEBHOOK_URL        --body "$SLACK_WEBHOOK_URL"        --repo "$REPO"
 
 echo "✅ All secrets set"
 ```
