@@ -3,7 +3,7 @@
 # faster-whisper "base" model (~145 MB) so transcription works without
 # any external API key or runtime downloads.
 
-FROM python:3.11-slim AS base
+FROM python:3.13-slim AS base
 
 # System deps — ffmpeg is required for audio extraction from video files
 RUN apt-get update && apt-get install -y --no-install-recommends \

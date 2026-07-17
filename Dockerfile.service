@@ -3,7 +3,7 @@
 ARG SERVICE=llm-gateway
 ARG PORT=8000
 
-FROM python:3.11-slim AS base
+FROM python:3.13-slim AS base
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \

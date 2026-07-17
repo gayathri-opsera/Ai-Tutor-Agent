@@ -118,7 +118,7 @@ services:
 
   # Run Alembic migrations (runs once, then exits)
   db-migrate:
-    image: python:3.11-slim
+    image: python:3.13-slim
     networks:
       - ai-tutor-net
     env_file: .env

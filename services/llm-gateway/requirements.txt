@@ -1,11 +1,10 @@
-fastapi==0.115.5
-uvicorn[standard]==0.32.1
+fastapi==0.139.0
+uvicorn[standard]==0.34.0
 httpx==0.28.1
-pydantic==2.10.1
-pydantic-settings==2.6.1
+pydantic==2.11.0
+pydantic-settings==2.9.1
 aiokafka==0.11.0
 python-dotenv==1.0.1
-starlette==0.41.3
 anyio==4.7.0
 tenacity==9.0.0
 
