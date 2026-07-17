@@ -136,3 +136,17 @@ class AdminConfigChangeEvent(BaseEvent):
     old_value: Any = None
     new_value: Any = None
     tenant_id: str = ""
+
+
+# ---------------------------------------------------------------------------
+# user-approval-events
+# ---------------------------------------------------------------------------
+
+class UserApprovalCompletedEvent(BaseEvent):
+    """Emitted when an admin approves or rejects a user registration request."""
+    event_type: str = "user.approval.completed"
+    actor_id: str                    # Admin's keycloak_id who performed the action
+    user_id: str                     # Target user's database UUID
+    keycloak_id: str                 # Target user's keycloak_id
+    outcome: str                     # "approved" | "rejected"
+    roles_assigned: list[str] = Field(default_factory=list)  # populated on approval

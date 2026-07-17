@@ -177,6 +177,13 @@ export function Navbar() {
                     🖥️ Monitoring
                   </Link>
                 )}
+                {user?.role === 'Admin' && (
+                  <Link to="/admin/users"
+                    style={{ display: 'block', padding: '9px 16px', fontSize: '0.85rem', color: 'var(--text)' }}
+                    onClick={() => setDropOpen(false)}>
+                    👥 User Approvals
+                  </Link>
+                )}
                 <button
                   onClick={() => { logout(); setDropOpen(false); navigate('/'); }}
                   style={{

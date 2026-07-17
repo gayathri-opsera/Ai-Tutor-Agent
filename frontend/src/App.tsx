@@ -12,6 +12,7 @@ import { DocumentStatus } from './pages/ContentManagement/DocumentStatus';
 import { LearnerProgressDashboard } from './pages/LearnerProgress/LearnerProgressDashboard';
 import { AdminConfigPanel } from './pages/AdminConfig/AdminConfigPanel';
 import { AdminMonitoringDashboard } from './pages/AdminMonitoring/AdminMonitoringDashboard';
+import { AdminUsersPage } from './pages/AdminUsers/AdminUsersPage';
 import { AssessmentPage } from './pages/Assessment/AssessmentPage';
 
 export default function App() {
@@ -43,6 +44,7 @@ export default function App() {
           {user.role === 'Admin' && <>
             <Route path="/admin/config"      element={<AdminConfigPanel />} />
             <Route path="/admin/monitoring"  element={<AdminMonitoringDashboard />} />
+            <Route path="/admin/users"       element={<AdminUsersPage />} />
           </>}
 
           <Route path="*" element={<Navigate to="/" replace />} />

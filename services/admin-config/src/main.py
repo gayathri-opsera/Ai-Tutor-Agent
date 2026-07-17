@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import asyncpg
 from fastapi import FastAPI
 
+from src.api.admin_users import router as admin_users_router
 from src.api.auth import router as auth_router
 from src.api.config import router as config_router
 from src.repository import UserRepository
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Admin Configuration Service", lifespan=lifespan)
 app.include_router(config_router)
 app.include_router(auth_router)
+app.include_router(admin_users_router)
 
 
 @app.get("/health")
