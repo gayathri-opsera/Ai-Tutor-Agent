@@ -50,10 +50,17 @@ jobs:
     with:
       service_path: services/confidence-grader
 
+  contract-validation:
+    name: "03 - Contract Validation"
+    uses: ./.github/workflows/shared-contract-validation.yaml
+    needs: [security-scan]
+    with:
+      service_name: confidence-grader
+
   build-image:
     name: "02 - Build Image"
     runs-on: ubuntu-latest
-    needs: [security-scan, architectural-lint]
+    needs: [security-scan, architectural-lint, contract-validation]
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
       ecr_uri: ${{ steps.ecr.outputs.uri }}

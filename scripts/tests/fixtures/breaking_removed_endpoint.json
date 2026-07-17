@@ -1,0 +1,21 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Test Service", "version": "1.0.0"},
+  "paths": {
+    "/api/v1/items": {
+      "post": {
+        "summary": "Create Item",
+        "operationId": "create_item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"required": ["name", "price", "category"], "properties": {"name": {"type": "string"}, "price": {"type": "number"}, "category": {"type": "string"}}}
+            }
+          }
+        },
+        "responses": {"200": {"description": "OK"}, "422": {"description": "Validation Error"}}
+      }
+    }
+  }
+}
