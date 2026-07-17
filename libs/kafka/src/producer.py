@@ -119,8 +119,17 @@ class KafkaProducer:
         else:
             payload = dict(value)
 
-        # Sign the payload so consumers can verify authenticity (KAFKA_VERIFY_SIGNATURES).
+        # Validate payload against the topic schema registry before emitting.
         import os as _os
+        if _os.getenv("KAFKA_VALIDATE_SCHEMA", "true").lower() not in ("0", "false", "no"):
+            from src.schema_registry import SchemaValidationError, validate_payload
+            try:
+                validate_payload(topic, payload)
+            except SchemaValidationError as exc:
+                logger.error("Schema validation failed for topic %s: %s — message dropped", topic, exc)
+                raise
+
+        # Sign the payload so consumers can verify authenticity (KAFKA_VERIFY_SIGNATURES).
         if _os.getenv("KAFKA_SIGN_MESSAGES", "true").lower() not in ("0", "false", "no"):
             from src.signing import sign_payload
             signed = sign_payload(payload)

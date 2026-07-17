@@ -12,6 +12,15 @@ from src.reranker import reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
 
+try:
+    from libs.model.src.provider import ModelProvider  # type: ignore[import]
+    from libs.model.src.gateway_provider import GatewayModelProvider  # type: ignore[import]
+    _MODEL_PROVIDER_AVAILABLE = True
+except ImportError:
+    ModelProvider = None  # type: ignore[assignment,misc]
+    GatewayModelProvider = None  # type: ignore[assignment,misc]
+    _MODEL_PROVIDER_AVAILABLE = False
+
 
 class VectorDBClientProtocol(Protocol):
     async def query_vectors(
@@ -20,16 +29,41 @@ class VectorDBClientProtocol(Protocol):
 
 
 class RAGPipelineService:
-    """Orchestrates embedding, vector search, filtering, and re-ranking."""
+    """Orchestrates embedding, vector search, filtering, and re-ranking.
+
+    Parameters
+    ----------
+    vector_client:
+        Any object satisfying ``VectorDBClientProtocol``.
+    embedding_url:
+        Fallback URL for the embedding service when no ``model_provider`` is
+        supplied.  Ignored when ``model_provider`` is set.
+    model_provider:
+        Optional :class:`~libs.model.src.provider.ModelProvider` implementation.
+        When provided, embeddings are generated via
+        ``model_provider.embed()`` rather than a raw httpx call — removing
+        the hardcoded embedding-service URL dependency (Strike #3).
+    http_client:
+        Optional injectable ``httpx.AsyncClient`` used for the legacy
+        embedding endpoint fallback path.
+    """
 
     def __init__(
         self,
         vector_client: VectorDBClientProtocol,
         embedding_url: str = "http://localhost:8002",
+        model_provider: Any | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self.vector_client = vector_client
         self.embedding_url = embedding_url.rstrip("/")
+        # Prefer the injected provider; fall back to GatewayModelProvider; then httpx.
+        if model_provider is not None:
+            self._model_provider = model_provider
+        elif _MODEL_PROVIDER_AVAILABLE and GatewayModelProvider is not None:
+            self._model_provider = GatewayModelProvider()
+        else:
+            self._model_provider = None
         self._http = http_client
 
     async def retrieve(
@@ -65,6 +99,20 @@ class RAGPipelineService:
         return {"chunks": ranked, "query_embedding": embedding}
 
     async def _embed(self, text: str) -> list[float]:
+        # Fast path: use the injected ModelProvider (GatewayModelProvider by default).
+        # This removes the hardcoded embedding-service URL and routes through the
+        # LLM Gateway — a single authoritative HTTP client with retry/auth baked in.
+        if self._model_provider is not None:
+            try:
+                vectors = await self._model_provider.embed([text])
+                return vectors[0]
+            except Exception as exc:
+                logger.warning(
+                    "ModelProvider.embed failed (%s) — falling back to direct embedding-service call",
+                    exc,
+                )
+
+        # Legacy fallback: call the embedding-service directly via httpx.
         client = self._http or httpx.AsyncClient()
         close_client = self._http is None
         try:

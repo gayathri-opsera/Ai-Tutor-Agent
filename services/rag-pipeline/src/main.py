@@ -16,6 +16,11 @@ from src.api.rag import router as rag_router
 from src.config import settings
 from src.service import RAGPipelineService
 
+try:
+    from libs.auth.src.service_middleware import ServiceAuthMiddleware  # type: ignore[import]
+except ImportError:
+    ServiceAuthMiddleware = None  # type: ignore[assignment,misc]
+
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
@@ -142,8 +147,10 @@ async def lifespan(app: FastAPI):
 
 def create_app(rag_service=None) -> FastAPI:
     _app = FastAPI(title="RAG Pipeline", version="1.0.0", lifespan=lifespan)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+    _app.add_middleware(GZipMiddleware, minimum_size=1000)
     _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    if ServiceAuthMiddleware is not None:
+        _app.add_middleware(ServiceAuthMiddleware)
     _app.include_router(rag_router)
     if rag_service is not None:
         _app.state.rag_service = rag_service

@@ -122,6 +122,16 @@ class KafkaConsumer:
                         schema_version, topic,
                     )
 
+                # Validate payload against the topic schema registry (non-blocking — warns only).
+                try:
+                    from src.schema_registry import SchemaValidationError, validate_payload
+                    validate_payload(topic, payload)
+                except Exception as exc:
+                    logger.warning(
+                        "Schema registry validation warning for topic %s: %s — processing anyway",
+                        topic, exc,
+                    )
+
                 await self._handle_with_retry(topic, payload, handler)
                 await consumer.commit()
 

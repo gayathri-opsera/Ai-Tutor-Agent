@@ -14,6 +14,11 @@ from src.agent import ReActAgent
 from src.api.agent import router as agent_router
 from src.web_search import WebSearchService
 
+try:
+    from libs.auth.src.service_middleware import ServiceAuthMiddleware  # type: ignore[import]
+except ImportError:
+    ServiceAuthMiddleware = None  # type: ignore[assignment,misc]
+
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag-pipeline:8002")
@@ -51,8 +56,10 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Agent Reasoning", version="1.0.0", lifespan=lifespan)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    if ServiceAuthMiddleware is not None:
+        app.add_middleware(ServiceAuthMiddleware)
     app.include_router(agent_router)
 
     @app.get("/health")
