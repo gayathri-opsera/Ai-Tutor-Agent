@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../auth/UserContext';
+import './Navbar.css';
 
 const ROLE_COLOR: Record<string, string> = {
   Learner: '#a435f0', Creator: '#1e6055', Admin: '#c0392b', SuperAdmin: '#c0392b',

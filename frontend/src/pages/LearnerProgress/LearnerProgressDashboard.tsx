@@ -33,15 +33,11 @@ function StatCard({ emoji, title, value, sub, accent }: {
   emoji: string; title: string; value: string | number; sub?: string; accent?: string;
 }) {
   return (
-    <div style={{
-      background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '1.25rem',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.06)', flex: '1 1 160px', minWidth: 140,
-    }}>
-      <div style={{ fontSize: '1.6rem', marginBottom: 6 }}>{emoji}</div>
-      <div style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600,
-                    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>{title}</div>
-      <div style={{ fontSize: '1.6rem', fontWeight: 800, color: accent ?? '#111' }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: 2 }}>{sub}</div>}
+    <div className="stat-card">
+      <div className="stat-card-icon">{emoji}</div>
+      <div className="stat-card-value" style={accent ? { color: accent } : undefined}>{value}</div>
+      <div className="stat-card-label">{title}</div>
+      {sub && <div className="text-sm text-muted" style={{ marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -95,14 +91,14 @@ export function LearnerProgressDashboard() {
     }));
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>My Learning Dashboard</h1>
-        <p style={{ color: '#6b7280', marginTop: 2 }}>Track your progress, time, and achievements.</p>
+    <div className="dashboard-page">
+      <div className="dashboard-header">
+        <h1 className="dashboard-title">My Learning Dashboard</h1>
+        <p className="dashboard-subtitle">Track your progress, time, and achievements.</p>
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
+      <div className="stats-row">
         <StatCard
           emoji="📊" title="Overall Completion" accent="#7c3aed"
           value={`${data.overall_completion_percent}%`}
@@ -126,20 +122,20 @@ export function LearnerProgressDashboard() {
       </div>
 
       {/* Progress bar */}
-      <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}>Overall Completion</span>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#7c3aed' }}>{data.overall_completion_percent}%</span>
+      <div className="chart-card">
+        <div className="flex justify-between mb-2">
+          <span className="font-semibold">Overall Completion</span>
+          <span style={{ fontWeight: 700, color: '#7c3aed' }}>{data.overall_completion_percent}%</span>
         </div>
-        <div style={{ height: 12, background: '#f3f4f6', borderRadius: 6, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${data.overall_completion_percent}%`, background: 'linear-gradient(90deg, #7c3aed, #a855f7)', borderRadius: 6, transition: 'width 0.5s' }} />
+        <div className="progress-bar-container">
+          <div className="progress-bar-fill" style={{ width: `${data.overall_completion_percent}%` }} />
         </div>
       </div>
 
       {/* Assessment score trend */}
       {trendData.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          <h2 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '1rem' }}>Assessment Score Trend</h2>
+        <div className="chart-card">
+          <h2 className="chart-card-title">Assessment Score Trend</h2>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={trendData}>
               <defs>
@@ -160,8 +156,8 @@ export function LearnerProgressDashboard() {
 
       {/* Topic proficiency BarChart */}
       {topicData.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '1rem 1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-          <h2 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '1rem' }}>Topic Proficiency</h2>
+        <div className="chart-card">
+          <h2 className="chart-card-title">Topic Proficiency</h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={topicData} layout="vertical" margin={{ left: 0, right: 20 }}>
               <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />

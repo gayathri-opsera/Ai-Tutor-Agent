@@ -1,3 +1,8 @@
+/* ── AI Tutor — Design Token System ──────────────────────────────────────── */
+@import './styles/tokens.css';
+@import './styles/components.css';
+@import './styles/dashboard.css';
+
 /* ── AI Tutor — Udemy-inspired Design System ─────────────────────────────── */
 
 :root {
