@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { ChatInterface } from './components/ChatInterface';
 import { HomePage } from './pages/Home/HomePage';
 import { LoginPage } from './pages/Login/LoginPage';
+import { PendingApprovalPage } from './pages/PendingApproval/PendingApprovalPage';
 import { CourseDetailPage } from './pages/Course/CourseDetailPage';
 import { MyLearningPage } from './pages/MyLearning/MyLearningPage';
 import { KnowledgeBaseList } from './pages/ContentManagement/KnowledgeBaseList';
@@ -16,9 +17,21 @@ import { AdminUsersPage } from './pages/AdminUsers/AdminUsersPage';
 import { AssessmentPage } from './pages/Assessment/AssessmentPage';
 
 export default function App() {
-  const { user } = useUser();
+  const { user, initializing, login } = useUser();
 
-  if (!user) return <LoginPage />;
+  if (initializing) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage onLogin={login} />;
+
+  if (user.approvalStatus === 'pending') return <PendingApprovalPage />;
+
+  const isAdmin = user.isAdmin;
 
   return (
     <div className="page-shell">
@@ -41,7 +54,7 @@ export default function App() {
           <Route path="/assessment/:id"      element={<AssessmentPage />} />
 
           {/* ── Admin (role-gated) ──────────────────────────── */}
-          {user.role === 'Admin' && <>
+          {isAdmin && <>
             <Route path="/admin/config"      element={<AdminConfigPanel />} />
             <Route path="/admin/monitoring"  element={<AdminMonitoringDashboard />} />
             <Route path="/admin/users"       element={<AdminUsersPage />} />
