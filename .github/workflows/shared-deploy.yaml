@@ -121,11 +121,11 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
@@ -159,7 +159,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Generate Image Tag
         id: tag
@@ -237,7 +237,7 @@ jobs:
       - name: Load Image
         run: docker load -i /tmp/${{ inputs.service }}-image.tar
       - name: Run Grype Scan
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         id: scan
         with:
           image: ${{ needs.build-image.outputs.ecr_uri }}:${{ needs.build-image.outputs.image_tag }}
@@ -290,7 +290,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
@@ -370,7 +370,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -378,9 +378,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.29.0'
+          version: 'v1.34.0'
       - name: Setup Hub Kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
       - name: Apply ArgoCD Application
@@ -403,9 +403,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.29.0'
+          version: 'v1.34.0'
       - name: Setup Spoke Kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
       - name: Create Application Secrets
@@ -452,9 +452,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.29.0'
+          version: 'v1.34.0'
       - name: Setup Hub Kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
       - name: Refresh ArgoCD Repository Credentials
@@ -537,9 +537,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.29.0'
+          version: 'v1.34.0'
       - name: Setup Spoke Kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
       - name: Wait for Deployment
