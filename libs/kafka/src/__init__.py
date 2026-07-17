@@ -27,8 +27,10 @@ from .schema_registry import (
     AuditEvent,
     AnalyticsEvent,
     AdminConfigChangeEvent,
-    UserApprovalEvent,
-    CourseApprovalEvent,
+    UserApprovalRequestedEvent,
+    UserApprovalCompletedEvent,
+    CourseApprovalRequestedEvent,
+    CourseApprovalCompletedEvent,
 )
 
 __all__ = [
@@ -60,6 +62,8 @@ __all__ = [
     "AuditEvent",
     "AnalyticsEvent",
     "AdminConfigChangeEvent",
-    "UserApprovalEvent",
-    "CourseApprovalEvent",
+    "UserApprovalRequestedEvent",
+    "UserApprovalCompletedEvent",
+    "CourseApprovalRequestedEvent",
+    "CourseApprovalCompletedEvent",
 ]

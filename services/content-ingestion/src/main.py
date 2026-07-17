@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 def create_app(ingestion_service=None) -> FastAPI:
     """Factory used in tests to inject a mock ingestion service."""
     _app = FastAPI(title="Content Ingestion", version="1.0.0", lifespan=lifespan)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+    _app.add_middleware(GZipMiddleware, minimum_size=1000)
     _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     _app.include_router(content_router)
     if ingestion_service is not None:
