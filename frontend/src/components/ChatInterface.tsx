@@ -19,7 +19,7 @@ export interface Message {
   source_type?: 'documents' | 'ai_knowledge';
 }
 
-interface Session { id: string; title: string; }
+interface Session { id: string; title: string; created_at?: string; }
 interface KnowledgeBase { id: string; name: string; }
 
 // Persist anonymous session IDs in localStorage so they survive page reloads
@@ -53,6 +53,8 @@ export function ChatInterface() {
   // Rename state — which session is being edited inline
   const [renamingId, setRenamingId]       = useState<string | null>(null);
   const [renameValue, setRenameValue]     = useState('');
+  const [deletingId, setDeletingId]       = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const bottomRef    = useRef<HTMLDivElement>(null);
   const creatingRef  = useRef(false); // guard against double-creation
@@ -300,6 +302,22 @@ export function ChatInterface() {
     }).catch(() => {});
   }, [activeSession]);
 
+  const deleteSession = useCallback(async (sessionId: string) => {
+    setDeletingId(sessionId);
+    try {
+      await fetch(`${CHAT_API}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+      setSessions(s => s.filter(x => x.id !== sessionId));
+      if (activeSession === sessionId) {
+        setActiveSession(null);
+        setMessages([]);
+        setActiveTitle('New Chat');
+      }
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  }, [activeSession]);
+
   const rateMessage = (id: string, rating: 'up' | 'down') => {
     setMessages(msgs => msgs.map(m => m.id === id ? { ...m, rating } : m));
     // Track rating in analytics
@@ -332,50 +350,93 @@ export function ChatInterface() {
         <button className="chat-new-btn" onClick={() => createSession(selectedKbId === '__none__' ? undefined : selectedKbId)}>+ New Chat</button>
 
         <ul className="chat-sessions-list" role="list">
-          {sessions.length === 0 && (
-            <li style={{ padding: '12px 16px', color: '#666', fontSize: '0.78rem' }}>
-              No chats yet — start a new one above.
-            </li>
-          )}
-          {sessions.map(s => (
-            <li key={s.id} style={{ position: 'relative' }}>
-              {renamingId === s.id ? (
-                /* ── Inline rename input ── */
-                <div style={{ display: 'flex', gap: 4, padding: '4px 8px' }}>
-                  <input
-                    autoFocus
-                    value={renameValue}
-                    onChange={e => setRenameValue(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
-                      if (e.key === 'Escape') setRenamingId(null);
+          {(() => {
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const recentSessions = sessions.filter(s =>
+              !s.created_at || new Date(s.created_at).getTime() >= sevenDaysAgo
+            );
+            if (recentSessions.length === 0) {
+              return (
+                <li style={{ padding: '16px', color: '#666', fontSize: '0.8rem', textAlign: 'center', lineHeight: 1.5 }}>
+                  <span style={{ display: 'block', fontSize: '1.5rem', marginBottom: 6 }}>💬</span>
+                  No chats in the last 7 days.<br />Start a new chat above!
+                </li>
+              );
+            }
+            return recentSessions.map(s => (
+              <li key={s.id} style={{ position: 'relative' }}>
+                {renamingId === s.id ? (
+                  /* ── Inline rename input ── */
+                  <div style={{ display: 'flex', gap: 4, padding: '4px 8px' }}>
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
+                        if (e.key === 'Escape') setRenamingId(null);
+                      }}
+                      onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
+                      style={{ flex: 1, fontSize: '0.8rem', padding: '4px 6px', borderRadius: 4, border: '1px solid #7c3aed', background: '#1a1a2e', color: '#fff', outline: 'none' }}
+                      maxLength={80}
+                    />
+                  </div>
+                ) : confirmDeleteId === s.id ? (
+                  /* ── Delete confirmation ── */
+                  <div style={{ padding: '8px 12px', background: '#1a0a0a', borderLeft: '3px solid #ef4444' }}>
+                    <p style={{ fontSize: '0.75rem', color: '#fca5a5', marginBottom: 6 }}>
+                      Delete this chat?
+                    </p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => deleteSession(s.id)}
+                        disabled={deletingId === s.id}
+                        style={{ flex: 1, background: '#ef4444', color: '#fff', border: 'none',
+                                 padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem' }}>
+                        {deletingId === s.id ? '…' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        style={{ flex: 1, background: '#333', color: '#ccc', border: 'none',
+                                 padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Normal session row ── */
+                  <button
+                    className={`chat-session-item${activeSession === s.id ? ' active' : ''}`}
+                    onClick={() => selectSession(s)}
+                    title="Double-click to rename"
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      setRenamingId(s.id);
+                      setRenameValue(s.title);
                     }}
-                    onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
-                    style={{ flex: 1, fontSize: '0.8rem', padding: '4px 6px', borderRadius: 4, border: '1px solid #7c3aed', background: '#1a1a2e', color: '#fff', outline: 'none' }}
-                    maxLength={80}
-                  />
-                </div>
-              ) : (
-                /* ── Normal session row ── */
-                <button
-                  className={`chat-session-item${activeSession === s.id ? ' active' : ''}`}
-                  onClick={() => selectSession(s)}
-                  title="Double-click to rename"
-                  onDoubleClick={e => {
-                    e.stopPropagation();
-                    setRenamingId(s.id);
-                    setRenameValue(s.title);
-                  }}
-                  style={{ paddingRight: 32 }}
-                >
-                  <span className="chat-session-icon">💬</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {s.title}
-                  </span>
-                </button>
-              )}
-            </li>
-          ))}
+                    style={{ paddingRight: 32 }}
+                  >
+                    <span className="chat-session-icon">💬</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {s.title}
+                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
+                      style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                               background: 'none', border: 'none', color: '#555', cursor: 'pointer',
+                               fontSize: '0.8rem', padding: '2px 4px', borderRadius: 3 }}
+                      title="Delete session"
+                      onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#555')}
+                      aria-label="Delete session"
+                    >
+                      🗑
+                    </button>
+                  </button>
+                )}
+              </li>
+            ));
+          })()}
         </ul>
 
         {/* Starter / suggested prompts */}
