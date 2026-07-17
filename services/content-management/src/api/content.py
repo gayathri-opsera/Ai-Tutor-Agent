@@ -45,7 +45,14 @@ async def list_kbs(
     request: Request = None,
 ):
     svc = request.app.state.cms
-    items = await svc.list_kbs(organization_id, include_archived=include_archived)
+    # Only return approved courses to regular users; admins can see all statuses.
+    user = getattr(getattr(request, "state", None), "user", None)
+    is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    items = await svc.list_kbs(
+        organization_id,
+        include_archived=include_archived,
+        approved_only=not is_admin,
+    )
     return {"items": [
         {"id": kb.id, "name": kb.name, "description": kb.description, "is_active": kb.is_active}
         for kb in items

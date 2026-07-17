@@ -77,25 +77,26 @@ class ContentManagementService:
         )
 
     async def list_kbs(
-        self, organization_id: str, include_archived: bool = False
+        self, organization_id: str, include_archived: bool = False, approved_only: bool = True
     ) -> list[KnowledgeBase]:
         async with self._pool.acquire() as conn:
+            approval_clause = "AND approval_status = 'approved'::kb_approval_status_enum" if approved_only else ""
             if include_archived:
                 rows = await conn.fetch(
-                    """
+                    f"""
                     SELECT id, name, description, organization_id, is_active
                     FROM knowledge_bases
-                    WHERE organization_id = $1
+                    WHERE organization_id = $1 {approval_clause}
                     ORDER BY is_active DESC, created_at DESC
                     """,
                     organization_id,
                 )
             else:
                 rows = await conn.fetch(
-                    """
+                    f"""
                     SELECT id, name, description, organization_id, is_active
                     FROM knowledge_bases
-                    WHERE organization_id = $1 AND is_active = true
+                    WHERE organization_id = $1 AND is_active = true {approval_clause}
                     ORDER BY created_at DESC
                     """,
                     organization_id,
@@ -310,6 +311,65 @@ class ContentManagementService:
             retired_at=row["retired_at"],
         )
 
+
+    async def list_by_approval_status(
+        self,
+        status: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Return knowledge bases filtered by approval_status with total count."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, name, description, organization_id,
+                       approval_status, ai_overview, created_at
+                FROM knowledge_bases
+                WHERE approval_status = $1::kb_approval_status_enum
+                  AND is_active = true
+                ORDER BY created_at ASC
+                LIMIT $2 OFFSET $3
+                """,
+                status, limit, offset,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM knowledge_bases "
+                "WHERE approval_status = $1::kb_approval_status_enum AND is_active = true",
+                status,
+            )
+        return (
+            [
+                {
+                    "id": str(r["id"]),
+                    "name": r["name"],
+                    "description": r["description"] or "",
+                    "organization_id": r["organization_id"],
+                    "approval_status": str(r["approval_status"]),
+                    "ai_overview": r["ai_overview"],
+                    "created_at": r["created_at"].isoformat(),
+                }
+                for r in rows
+            ],
+            int(total or 0),
+        )
+
+    async def update_kb_field(self, kb_id: str, field: str, value: str) -> None:
+        """Generic single-field updater for approval workflow fields."""
+        allowed = {"approval_status", "ai_overview", "rejection_reason", "clarification_message"}
+        if field not in allowed:
+            raise ValueError(f"Field {field!r} not allowed for update")
+        # Use a safe lookup instead of direct string interpolation
+        field_sql = {
+            "approval_status":        "approval_status = $2::kb_approval_status_enum",
+            "ai_overview":            "ai_overview = $2",
+            "rejection_reason":       "rejection_reason = $2",
+            "clarification_message":  "clarification_message = $2",
+        }[field]
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE knowledge_bases SET {field_sql} WHERE id = $1",
+                kb_id, value,
+            )
 
     async def platform_stats(self) -> dict:
         """Return live counts for the home-page stats strip."""

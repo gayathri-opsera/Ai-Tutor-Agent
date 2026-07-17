@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.content import router
+from src.api.admin_courses import router as admin_courses_router
 from src.service import ContentManagementService, Document, KnowledgeBase, create_pool
 
 # Demo seed data — inserted once into the DB if not already present.
@@ -76,6 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(admin_courses_router)
 
 
 @app.get("/health")

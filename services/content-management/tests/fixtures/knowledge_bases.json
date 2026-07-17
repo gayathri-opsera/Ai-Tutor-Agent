@@ -1,0 +1,36 @@
+[
+  {
+    "id": "bbbbbbbb-1001-0000-0000-000000000001",
+    "name": "Python Fundamentals",
+    "description": "Core Python programming concepts.",
+    "organization_id": "default",
+    "approval_status": "approved",
+    "created_at": "2026-07-01T10:00:00Z"
+  },
+  {
+    "id": "bbbbbbbb-1002-0000-0000-000000000002",
+    "name": "Advanced Machine Learning",
+    "description": "Deep dives into ML algorithms.",
+    "organization_id": "default",
+    "approval_status": "pending_review",
+    "created_at": "2026-07-16T10:00:00Z"
+  },
+  {
+    "id": "bbbbbbbb-1003-0000-0000-000000000003",
+    "name": "Data Engineering 101",
+    "description": "ETL, pipelines, and data warehousing basics.",
+    "organization_id": "default",
+    "approval_status": "rejected",
+    "rejection_reason": "Incomplete content — only 1 document uploaded.",
+    "created_at": "2026-07-10T10:00:00Z"
+  },
+  {
+    "id": "bbbbbbbb-1004-0000-0000-000000000004",
+    "name": "Cloud Security Essentials",
+    "description": "IAM, zero-trust, and infrastructure hardening.",
+    "organization_id": "default",
+    "approval_status": "clarification_requested",
+    "clarification_message": "Please clarify the target audience age group.",
+    "created_at": "2026-07-15T10:00:00Z"
+  }
+]
