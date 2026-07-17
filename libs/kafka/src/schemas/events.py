@@ -142,6 +142,16 @@ class AdminConfigChangeEvent(BaseEvent):
 # user-approval-events
 # ---------------------------------------------------------------------------
 
+class UserApprovalRequestedEvent(BaseEvent):
+    """Emitted when a new user completes registration and awaits admin review."""
+    event_type: str = "user.approval.requested"
+    actor_id: str                    # The registering user's keycloak_id
+    user_id: str                     # Database UUID of the new user
+    keycloak_id: str                 # Keycloak subject claim
+    email_hash: str                  # SHA-256 of the email (no PII in Kafka)
+    resource_type: str = "user"
+
+
 class UserApprovalCompletedEvent(BaseEvent):
     """Emitted when an admin approves or rejects a user registration request."""
     event_type: str = "user.approval.completed"
@@ -149,4 +159,28 @@ class UserApprovalCompletedEvent(BaseEvent):
     user_id: str                     # Target user's database UUID
     keycloak_id: str                 # Target user's keycloak_id
     outcome: str                     # "approved" | "rejected"
-    roles_assigned: list[str] = Field(default_factory=list)  # populated on approval
+    roles_assigned: list[str] = Field(default_factory=list)
+    resource_type: str = "user"
+
+
+# ---------------------------------------------------------------------------
+# course-approval-events
+# ---------------------------------------------------------------------------
+
+class CourseApprovalRequestedEvent(BaseEvent):
+    """Emitted when a creator submits a course for admin review."""
+    event_type: str = "course.approval.requested"
+    actor_id: str                    # Creator's keycloak_id
+    kb_id: str                       # knowledge_bases.id
+    course_name: str
+    resource_type: str = "course"
+
+
+class CourseApprovalCompletedEvent(BaseEvent):
+    """Emitted when an admin approves, rejects, or requests clarification on a course."""
+    event_type: str = "course.approval.completed"
+    actor_id: str                    # Admin's keycloak_id
+    kb_id: str                       # knowledge_bases.id
+    outcome: str                     # "approved" | "rejected" | "clarification_requested"
+    reason: str = ""                 # Populated on rejection
+    resource_type: str = "course"
