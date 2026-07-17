@@ -65,3 +65,58 @@ class AnalyticsService:
             "topic_distribution": {r["topic"]: r["cnt"] for r in topic_rows},
             "recent_events": [dict(r) for r in recent],
         }
+
+    async def creator_dashboard(self, creator_keycloak_id: str | None = None) -> dict[str, Any]:
+        """Return per-course enrollment and progress metrics.
+
+        If creator_keycloak_id is provided, filters to courses created by that user.
+        Admins pass creator_keycloak_id=None to get all courses.
+        """
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            filter_clause = (
+                "AND kb.created_by_keycloak_id = $1"
+                if creator_keycloak_id else ""
+            )
+            params = [creator_keycloak_id] if creator_keycloak_id else []
+
+            courses = await conn.fetch(
+                f"""
+                SELECT
+                    kb.id                                       AS knowledge_base_id,
+                    kb.name                                     AS title,
+                    kb.age_group,
+                    kb.approval_status,
+                    COUNT(DISTINCT ltp.user_id)                 AS enrollment_count,
+                    COALESCE(AVG(ltp.completion_pct), 0)        AS avg_completion_pct,
+                    COALESCE(AVG(ar.score), 0)                  AS avg_assessment_score
+                FROM knowledge_bases kb
+                LEFT JOIN learner_topic_progress ltp ON ltp.knowledge_base_id = kb.id
+                LEFT JOIN assessments a ON a.knowledge_base_id = kb.id
+                LEFT JOIN assessment_results ar ON ar.assessment_id = a.id
+                WHERE kb.is_active = true {filter_clause}
+                GROUP BY kb.id, kb.name, kb.age_group, kb.approval_status
+                ORDER BY enrollment_count DESC
+                """,
+                *params,
+            )
+
+            total_enrollments = sum(int(r["enrollment_count"]) for r in courses)
+            total_courses = len(courses)
+
+        return {
+            "total_courses":      total_courses,
+            "total_enrollments":  total_enrollments,
+            "courses": [
+                {
+                    "knowledge_base_id":   str(r["knowledge_base_id"]),
+                    "title":               r["title"],
+                    "age_group":           r["age_group"],
+                    "approval_status":     str(r["approval_status"]),
+                    "enrollment_count":    int(r["enrollment_count"]),
+                    "avg_completion_pct":  round(float(r["avg_completion_pct"]), 1),
+                    "avg_assessment_score": round(float(r["avg_assessment_score"]), 1),
+                }
+                for r in courses
+            ],
+        }

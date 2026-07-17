@@ -14,6 +14,7 @@ import { LearnerProgressDashboard } from './pages/LearnerProgress/LearnerProgres
 import { AdminConfigPanel } from './pages/AdminConfig/AdminConfigPanel';
 import { AdminMonitoringDashboard } from './pages/AdminMonitoring/AdminMonitoringDashboard';
 import { AdminUsersPage } from './pages/AdminUsers/AdminUsersPage';
+import { CreatorDashboardPage } from './pages/CreatorDashboard/CreatorDashboardPage';
 import { AssessmentPage } from './pages/Assessment/AssessmentPage';
 
 export default function App() {
@@ -52,6 +53,11 @@ export default function App() {
           {/* ── Progress ────────────────────────────────────── */}
           <Route path="/progress"            element={<LearnerProgressDashboard />} />
           <Route path="/assessment/:id"      element={<AssessmentPage />} />
+
+          {/* ── Creator ────────────────────────────────────────── */}
+          {(user.isCreator || isAdmin) && (
+            <Route path="/creator/dashboard" element={<CreatorDashboardPage />} />
+          )}
 
           {/* ── Admin (role-gated) ──────────────────────────── */}
           {isAdmin && <>

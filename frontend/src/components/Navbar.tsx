@@ -72,6 +72,10 @@ export function Navbar() {
             >
               ✚ Create Course
             </Link>
+            <Link to="/creator/dashboard"
+              className={`navbar-link${location.pathname === '/creator/dashboard' ? ' active' : ''}`}>
+              📈 My Stats
+            </Link>
           </>
         )}
         {user?.isAdmin && (

@@ -27,3 +27,17 @@ async def record_event(body: AnalyticsEvent, request: Request):
 async def get_summary(request: Request):
     svc = request.app.state.analytics
     return await svc.summary()
+
+
+@router.get("/creator/dashboard")
+async def creator_dashboard(request: Request):
+    """Return per-course enrollment metrics scoped to the authenticated creator.
+
+    Admins receive metrics for all courses (platform-wide view).
+    """
+    svc = request.app.state.analytics
+    user = getattr(request.state, "user", None)
+    caller_sub = getattr(user, "sub", None) if user else None
+    is_admin = bool(user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", [])))
+    creator_filter = None if is_admin else caller_sub
+    return await svc.creator_dashboard(creator_keycloak_id=creator_filter)
