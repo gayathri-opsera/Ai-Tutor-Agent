@@ -1,19 +1,35 @@
 """Analytics API routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field, field_validator
+
+try:
+    from decorators import require_role  # type: ignore[import]  # libs/auth
+    _admin_guard = Depends(require_role("Admin", "SuperAdmin"))
+except ImportError:
+    _admin_guard = None  # fallback for environments without libs/auth on path
 from typing import Any
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
 
 class AnalyticsEvent(BaseModel):
-    event_type: str
-    user_id: str = ""
-    topic: str = ""
-    rating: int | None = None
-    metadata: dict[str, Any] = {}
+    event_type: str = Field(..., min_length=1, max_length=128,
+                            description="Dot-separated event name, e.g. 'course.view'")
+    user_id: str = Field(default="", max_length=256)
+    topic: str = Field(default="", max_length=256)
+    rating: int | None = Field(default=None, ge=1, le=5,
+                               description="Optional satisfaction rating 1–5")
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("event_type")
+    @classmethod
+    def event_type_format(cls, v: str) -> str:
+        """Reject whitespace-only or obviously invalid event names."""
+        if not v.strip():
+            raise ValueError("event_type must not be blank")
+        return v.strip().lower()
 
 
 @router.post("/events", status_code=201)
@@ -43,15 +59,8 @@ async def creator_dashboard(request: Request):
     return await svc.creator_dashboard(creator_keycloak_id=creator_filter)
 
 
-@router.get("/admin/dashboard")
+@router.get("/admin/dashboard", dependencies=[_admin_guard] if _admin_guard else [])
 async def admin_dashboard(request: Request):
     """Return platform-wide aggregate metrics. Requires Admin or SuperAdmin role."""
-    user = getattr(request.state, "user", None)
-    if user is None:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=401, detail="Authentication required")
-    if not any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", [])):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Admin or SuperAdmin role required")
     svc = request.app.state.analytics
     return await svc.admin_dashboard()

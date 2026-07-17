@@ -14,10 +14,15 @@ import os
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from decorators import require_role  # type: ignore[import]  # from libs/auth
+
 logger = logging.getLogger(__name__)
+
+# FastAPI dependency — machine-verifiable authorization guard on every admin route.
+_admin_guard = Depends(require_role("Admin", "SuperAdmin"))
 
 LLM_GATEWAY_URL = os.getenv("LLM_GATEWAY_URL", "http://llm-gateway:8003")
 KAFKA_ENABLED   = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
@@ -60,13 +65,6 @@ class CourseActionResponse(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _require_admin(request: Request) -> None:
-    user = getattr(request.state, "user", None)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    allowed = {"Admin", "SuperAdmin"}
-    if not any(r in allowed for r in getattr(user, "roles", [])):
-        raise HTTPException(status_code=403, detail="Admin or SuperAdmin role required")
 
 
 async def _emit_kafka_event(topic: str, payload: dict) -> None:
@@ -112,14 +110,13 @@ async def _generate_ai_overview(kb_name: str, description: str) -> str:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.get("/pending", response_model=PendingCoursesResponse)
+@router.get("/pending", response_model=PendingCoursesResponse, dependencies=[_admin_guard])
 async def list_pending_courses(
     request: Request,
     limit: int = 50,
     offset: int = 0,
 ) -> PendingCoursesResponse:
     """Return paginated courses awaiting admin approval."""
-    _require_admin(request)
     svc = request.app.state.cms
 
     rows, total = await svc.list_by_approval_status("pending_review", limit=limit, offset=offset)
@@ -131,10 +128,9 @@ async def list_pending_courses(
     )
 
 
-@router.post("/{kb_id}/generate-overview", status_code=200)
+@router.post("/{kb_id}/generate-overview", status_code=200, dependencies=[_admin_guard])
 async def generate_overview(kb_id: str, request: Request) -> dict[str, Any]:
     """Generate an AI moderation overview for a pending course."""
-    _require_admin(request)
     svc = request.app.state.cms
 
     kb = await svc.get_kb(kb_id)
@@ -148,10 +144,9 @@ async def generate_overview(kb_id: str, request: Request) -> dict[str, Any]:
     return {"kb_id": kb_id, "ai_overview": overview}
 
 
-@router.post("/{kb_id}/approve", response_model=CourseActionResponse)
+@router.post("/{kb_id}/approve", response_model=CourseActionResponse, dependencies=[_admin_guard])
 async def approve_course(kb_id: str, request: Request) -> CourseActionResponse:
     """Approve a pending course — it becomes visible to learners."""
-    _require_admin(request)
     svc = request.app.state.cms
 
     kb = await svc.get_kb(kb_id)
@@ -172,14 +167,13 @@ async def approve_course(kb_id: str, request: Request) -> CourseActionResponse:
                                 message="Course approved and is now visible to learners")
 
 
-@router.post("/{kb_id}/reject", response_model=CourseActionResponse)
+@router.post("/{kb_id}/reject", response_model=CourseActionResponse, dependencies=[_admin_guard])
 async def reject_course(
     kb_id: str,
     body: RejectRequest,
     request: Request,
 ) -> CourseActionResponse:
     """Reject a pending course with a mandatory reason."""
-    _require_admin(request)
     svc = request.app.state.cms
 
     kb = await svc.get_kb(kb_id)
@@ -202,14 +196,13 @@ async def reject_course(
                                 message="Course rejected and creator will be notified")
 
 
-@router.post("/{kb_id}/request-clarification", response_model=CourseActionResponse)
+@router.post("/{kb_id}/request-clarification", response_model=CourseActionResponse, dependencies=[_admin_guard])
 async def request_clarification(
     kb_id: str,
     body: ClarificationRequest,
     request: Request,
 ) -> CourseActionResponse:
     """Ask the creator to clarify or revise their course submission."""
-    _require_admin(request)
     svc = request.app.state.cms
 
     kb = await svc.get_kb(kb_id)

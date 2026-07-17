@@ -119,6 +119,13 @@ class KafkaProducer:
         else:
             payload = dict(value)
 
+        # Sign the payload so consumers can verify authenticity (KAFKA_VERIFY_SIGNATURES).
+        import os as _os
+        if _os.getenv("KAFKA_SIGN_MESSAGES", "true").lower() not in ("0", "false", "no"):
+            from src.signing import sign_payload
+            signed = sign_payload(payload)
+            payload = signed.model_dump()
+
         if self._sync_mode:
             await local_bus.publish(topic, payload, key=key)
             return

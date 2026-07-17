@@ -9,6 +9,12 @@ from agent import ReasonRequest  # shared contract from libs/contracts (WO-015)
 from rag import RetrieveRequest  # shared contract from libs/contracts (WO-013)
 from src.models import AGENT_REASONING_URL, RAG_SERVICE_URL
 
+try:
+    from service_client import service_client  # type: ignore[import]  # libs/auth
+    _USE_SERVICE_CLIENT = True
+except ImportError:
+    _USE_SERVICE_CLIENT = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +92,7 @@ async def _fetch_rag_context(
     if not knowledge_base_id:
         return []
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with (service_client(timeout=5.0) if _USE_SERVICE_CLIENT else httpx.AsyncClient(timeout=5.0)) as client:
             resp = await client.post(
                 f"{RAG_SERVICE_URL}/api/internal/rag/retrieve",
                 json=RetrieveRequest(
@@ -111,7 +117,7 @@ async def _fetch_web_context(query: str) -> list[dict]:
     Returns [] on any failure so the chat flow always continues.
     """
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with (service_client(timeout=15.0) if _USE_SERVICE_CLIENT else httpx.AsyncClient(timeout=15.0)) as client:
             resp = await client.post(
                 f"{AGENT_REASONING_URL}/api/internal/agent/reason",
                 json=ReasonRequest(query=query, confidence=0.0).model_dump(exclude_none=True),

@@ -7,10 +7,16 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from src.signing import SignatureError, verify_signature
+
 logger = logging.getLogger(__name__)
 
 _MAX_HANDLER_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0
+
+# Set KAFKA_VERIFY_SIGNATURES=false to disable in migration period (default: true).
+import os as _os
+_VERIFY_SIGNATURES = _os.getenv("KAFKA_VERIFY_SIGNATURES", "true").lower() not in ("0", "false", "no")
 
 
 MessageHandler = Callable[[dict], Awaitable[None]]
@@ -94,6 +100,27 @@ class KafkaConsumer:
                     logger.error("Failed to deserialise message from %s: %s", topic, exc)
                     await consumer.commit()
                     continue
+
+                # Verify HMAC signature and extract inner payload when signatures are enabled.
+                if _VERIFY_SIGNATURES:
+                    try:
+                        payload = verify_signature(payload)
+                    except SignatureError as exc:
+                        logger.warning(
+                            "Dropping message from %s — signature verification failed: %s",
+                            topic, exc,
+                        )
+                        await consumer.commit()
+                        continue
+
+                # Schema version check — warn on unknown versions but still process.
+                schema_version = payload.get("schema_version")
+                if schema_version and schema_version != "1.0":
+                    logger.warning(
+                        "Unexpected schema_version %r on topic %s — expected '1.0'. "
+                        "Consumer may need updating.",
+                        schema_version, topic,
+                    )
 
                 await self._handle_with_retry(topic, payload, handler)
                 await consumer.commit()
