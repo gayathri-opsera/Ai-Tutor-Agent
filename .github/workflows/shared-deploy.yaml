@@ -128,6 +128,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Python for detect-secrets
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run detect-secrets scan
+        run: |
+          pip install --quiet detect-secrets
+          detect-secrets scan > /tmp/new-secrets.json
+
+          python3 - <<'PYEOF'
+          import json, sys
+
+          baseline = json.load(open('.secrets.baseline'))['results']
+          current  = json.load(open('/tmp/new-secrets.json'))['results']
+
+          baseline_hashes = {
+              (f, s['hashed_secret'])
+              for f, secrets in baseline.items()
+              for s in secrets
+          }
+          new_hashes = {
+              (f, s['hashed_secret'])
+              for f, secrets in current.items()
+              for s in secrets
+          }
+          unaudited = new_hashes - baseline_hashes
+          if unaudited:
+              print(f"::error::detect-secrets found {len(unaudited)} new unaudited secret(s).")
+              print("::error::Run 'detect-secrets scan > .secrets.baseline && detect-secrets audit .secrets.baseline' locally, audit each finding, then commit the updated baseline.")
+              for filepath, _ in sorted(unaudited):
+                  print(f"::error file={filepath}::Unaudited secret detected. See .secrets.baseline for details.")
+              sys.exit(1)
+          print(f"detect-secrets OK: 0 new secrets (baseline has {len(baseline_hashes)} audited entries)")
+          PYEOF
+
   # ── Stage 02 ────────────────────────────────────────────────────────────────
   architectural-lint:
     name: "02 - Architectural Lint"
