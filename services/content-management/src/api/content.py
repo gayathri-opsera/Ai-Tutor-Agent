@@ -8,11 +8,13 @@ class CreateKB(BaseModel):
     name: str
     organization_id: str
     description: str = ""
+    age_group: str | None = None
 
 
 class UpdateKB(BaseModel):
     name: str | None = None
     description: str | None = None
+    age_group: str | None = None
 
 
 class CreateDoc(BaseModel):
@@ -34,8 +36,17 @@ async def platform_stats(request: Request):
 @router.post("/knowledge-bases", status_code=201)
 async def create_kb(body: CreateKB, request: Request):
     svc = request.app.state.cms
-    kb = await svc.create_kb(body.name, body.organization_id, body.description)
-    return {"id": kb.id, "name": kb.name, "description": kb.description, "is_active": True}
+    user = getattr(getattr(request, "state", None), "user", None)
+    creator_keycloak_id = getattr(user, "sub", None) if user else None
+    kb = await svc.create_kb(
+        body.name, body.organization_id, body.description,
+        age_group=body.age_group,
+        created_by_keycloak_id=creator_keycloak_id,
+    )
+    return {
+        "id": kb.id, "name": kb.name, "description": kb.description,
+        "is_active": True, "age_group": kb.age_group,
+    }
 
 
 @router.get("/knowledge-bases")
@@ -74,10 +85,20 @@ async def get_kb(kb_id: str, request: Request):
 @router.put("/knowledge-bases/{kb_id}")
 async def update_kb(kb_id: str, body: UpdateKB, request: Request):
     svc = request.app.state.cms
-    kb = await svc.update_kb(kb_id, name=body.name, description=body.description)
+    # Ownership check: only the creator or an admin may update.
+    user = getattr(getattr(request, "state", None), "user", None)
+    is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    if not is_admin:
+        kb_row = await svc.get_kb_raw(kb_id)
+        if kb_row and kb_row.get("created_by_keycloak_id") and \
+                kb_row["created_by_keycloak_id"] != getattr(user, "sub", None):
+            raise HTTPException(status_code=403, detail="You do not own this course")
+    kb = await svc.update_kb(kb_id, name=body.name, description=body.description,
+                             age_group=body.age_group)
     if not kb:
         raise HTTPException(404, "Knowledge base not found")
-    return {"id": kb.id, "name": kb.name, "description": kb.description, "is_active": kb.is_active}
+    return {"id": kb.id, "name": kb.name, "description": kb.description,
+            "is_active": kb.is_active, "age_group": kb.age_group}
 
 
 @router.post("/knowledge-bases/{kb_id}/archive")
@@ -101,6 +122,15 @@ async def unarchive_kb(kb_id: str, request: Request):
 @router.delete("/knowledge-bases/{kb_id}", status_code=204)
 async def delete_kb(kb_id: str, request: Request):
     """Permanently delete a KB and all its documents, chunks, sessions, and assessments."""
+    # Ownership check: only the creator or an admin may delete.
+    user = getattr(getattr(request, "state", None), "user", None)
+    is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    if not is_admin:
+        svc = request.app.state.cms
+        kb_row = await svc.get_kb_raw(kb_id)
+        if kb_row and kb_row.get("created_by_keycloak_id") and \
+                kb_row["created_by_keycloak_id"] != getattr(user, "sub", None):
+            raise HTTPException(status_code=403, detail="You do not own this course")
     svc = request.app.state.cms
     deleted = await svc.hard_delete_kb(kb_id)
     if not deleted:

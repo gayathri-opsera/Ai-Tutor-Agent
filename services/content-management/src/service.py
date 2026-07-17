@@ -23,6 +23,8 @@ class KnowledgeBase:
     organization_id: str
     description: str = ""
     is_active: bool = True
+    age_group: str | None = None
+    created_by_keycloak_id: str | None = None
 
 
 @dataclass
@@ -46,24 +48,33 @@ class ContentManagementService:
     # ── Knowledge Bases ───────────────────────────────────────────────────────
 
     async def create_kb(
-        self, name: str, organization_id: str, description: str = ""
+        self, name: str, organization_id: str, description: str = "",
+        age_group: str | None = None, created_by_keycloak_id: str | None = None,
     ) -> KnowledgeBase:
         kb_id = str(uuid.uuid4())
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO knowledge_bases (id, name, description, organization_id)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO knowledge_bases (id, name, description, organization_id,
+                                             age_group, created_by_keycloak_id)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 kb_id, name, description, organization_id,
+                age_group, created_by_keycloak_id,
             )
-        return KnowledgeBase(id=kb_id, name=name, organization_id=organization_id, description=description)
+        return KnowledgeBase(
+            id=kb_id, name=name, organization_id=organization_id,
+            description=description, age_group=age_group,
+            created_by_keycloak_id=created_by_keycloak_id,
+        )
 
     async def get_kb(self, kb_id: str) -> KnowledgeBase | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, name, description, organization_id, is_active FROM knowledge_bases WHERE id = $1",
+                "SELECT id, name, description, organization_id, is_active, "
+                "age_group, created_by_keycloak_id "
+                "FROM knowledge_bases WHERE id = $1",
                 kb_id,
             )
         if not row:
@@ -74,7 +85,20 @@ class ContentManagementService:
             description=row["description"] or "",
             organization_id=row["organization_id"],
             is_active=row["is_active"],
+            age_group=row.get("age_group"),
+            created_by_keycloak_id=row.get("created_by_keycloak_id"),
         )
+
+    async def get_kb_raw(self, kb_id: str) -> dict | None:
+        """Return a raw dict row including ownership fields."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, created_by_keycloak_id FROM knowledge_bases WHERE id = $1",
+                kb_id,
+            )
+        if not row:
+            return None
+        return {"id": str(row["id"]), "created_by_keycloak_id": row.get("created_by_keycloak_id")}
 
     async def list_kbs(
         self, organization_id: str, include_archived: bool = False, approved_only: bool = True
@@ -113,18 +137,21 @@ class ContentManagementService:
         ]
 
     async def update_kb(
-        self, kb_id: str, name: str | None = None, description: str | None = None
+        self, kb_id: str, name: str | None = None, description: str | None = None,
+        age_group: str | None = None,
     ) -> KnowledgeBase | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 UPDATE knowledge_bases
                 SET name        = COALESCE($2, name),
-                    description = COALESCE($3, description)
+                    description = COALESCE($3, description),
+                    age_group   = COALESCE($4, age_group)
                 WHERE id = $1
-                RETURNING id, name, description, organization_id, is_active
+                RETURNING id, name, description, organization_id, is_active,
+                          age_group, created_by_keycloak_id
                 """,
-                kb_id, name, description,
+                kb_id, name, description, age_group,
             )
         if not row:
             return None
@@ -132,6 +159,8 @@ class ContentManagementService:
             id=str(row["id"]), name=row["name"],
             description=row["description"] or "",
             organization_id=row["organization_id"], is_active=row["is_active"],
+            age_group=row.get("age_group"),
+            created_by_keycloak_id=row.get("created_by_keycloak_id"),
         )
 
     async def archive_kb(self, kb_id: str) -> KnowledgeBase | None:
