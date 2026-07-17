@@ -8,6 +8,7 @@ from typing import AsyncIterator
 
 import httpx
 
+from llm import CompletionRequest, Message as LLMMessage, MessageRole, ModelTier  # shared contracts (WO-014)
 from src.models import (
     ANALYTICS_SERVICE_URL,
     GRADER_SERVICE_URL,
@@ -193,16 +194,18 @@ class ChatOrchestratorService:
         full_answer = ""
         llm_error = False
         try:
+            # Build typed CompletionRequest — uses shared LLM contract (WO-014)
+            completion_req = CompletionRequest(
+                messages=[LLMMessage(role=MessageRole(m["role"]), content=m["content"]) for m in llm_messages],
+                model_tier=ModelTier.STANDARD,
+                max_tokens=2048,
+                temperature=0.3,
+            )
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST",
                     f"{self.llm_gateway_url}/api/internal/llm/completions/stream",
-                    json={
-                        "messages":    llm_messages,
-                        "model_tier":  "standard",
-                        "max_tokens":  2048,
-                        "temperature": 0.3,
-                    },
+                    json=completion_req.model_dump(mode="json"),
                 ) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
