@@ -25,6 +25,7 @@ class CreateAssessment(BaseModel):
     assessment_type: str = "pre"
     knowledge_base_id: str = ""
     questions: list[dict]
+    answer_sheet: list[dict] | None = None
 
 
 class GenerateRequest(BaseModel):
@@ -47,7 +48,8 @@ class SubmitAnswers(BaseModel):
 async def create_assessment(body: CreateAssessment, request: Request):
     svc = request.app.state.assessment_service
     return await svc.create(
-        body.title, body.assessment_type, body.questions, body.knowledge_base_id
+        body.title, body.assessment_type, body.questions, body.knowledge_base_id,
+        answer_sheet=body.answer_sheet,
     )
 
 

@@ -49,23 +49,27 @@ class AssessmentService:
         assessment_type: str,
         questions: list[dict],
         knowledge_base_id: str = "",
+        answer_sheet: list[dict] | None = None,
     ) -> dict:
         pool = await self._get_pool()
         aid = str(uuid.uuid4())
         qs_json = json.dumps(questions)
+        as_json = json.dumps(answer_sheet) if answer_sheet is not None else None
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO local_assessments (id, knowledge_base_id, title, assessment_type, questions_json)
-                VALUES ($1, $2, $3, $4, $5::jsonb)
+                INSERT INTO local_assessments
+                  (id, knowledge_base_id, title, assessment_type, questions_json, answer_sheet_json)
+                VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
                 """,
-                aid, knowledge_base_id, title, assessment_type, qs_json,
+                aid, knowledge_base_id, title, assessment_type, qs_json, as_json,
             )
         return {
             "id": aid,
             "title": title,
             "assessment_type": assessment_type,
             "question_count": len(questions),
+            "has_answer_sheet": answer_sheet is not None,
         }
 
     async def get(self, assessment_id: str) -> dict | None:
@@ -82,6 +86,10 @@ class AssessmentService:
         if isinstance(raw_qs, str):
             raw_qs = json.loads(raw_qs)
         d["questions"] = raw_qs
+        raw_as = d.pop("answer_sheet_json", None)
+        if isinstance(raw_as, str):
+            raw_as = json.loads(raw_as) if raw_as else None
+        d["answer_sheet"] = raw_as
         return d
 
     async def get_for_learner(self, assessment_id: str) -> dict | None:
