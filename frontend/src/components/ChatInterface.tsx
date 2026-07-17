@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { CHAT_API, KB_API } from '../config/api';
+import { CHAT_API, KB_API, RAG_API } from '../config/api';
 import { useUser } from '../auth/UserContext';
 
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  sources?: Array<{ chunk_id: string; document_title: string }>;
+  sources?: Array<{
+    chunk_id: string;
+    document_id?: string;
+    document_title: string;
+    score?: number;
+    excerpt?: string;
+  }>;
   rating?: 'up' | 'down';
   confidence?: number;
   source_type?: 'documents' | 'ai_knowledge';
@@ -47,6 +53,7 @@ export function ChatInterface() {
   // Rename state — which session is being edited inline
   const [renamingId, setRenamingId]       = useState<string | null>(null);
   const [renameValue, setRenameValue]     = useState('');
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const bottomRef    = useRef<HTMLDivElement>(null);
   const creatingRef  = useRef(false); // guard against double-creation
 
@@ -75,6 +82,21 @@ export function ChatInterface() {
         setSelectedKbId('__none__'); // backend unreachable — still create demo session
       });
   }, []);
+
+  // Fetch suggested questions when a knowledge base is selected
+  useEffect(() => {
+    if (!selectedKbId || selectedKbId === '__none__') {
+      setSuggestedQuestions([]);
+      return;
+    }
+    fetch(`${RAG_API}/suggested-questions?knowledge_base_id=${encodeURIComponent(selectedKbId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { questions?: string[] } | null) => {
+        if (data?.questions?.length) setSuggestedQuestions(data.questions);
+        else setSuggestedQuestions([]);
+      })
+      .catch(() => setSuggestedQuestions([]));
+  }, [selectedKbId]);
 
   // Load saved sessions — server for authenticated users, localStorage IDs for anonymous
   useEffect(() => {
@@ -356,12 +378,12 @@ export function ChatInterface() {
           ))}
         </ul>
 
-        {/* Starter prompts */}
+        {/* Starter / suggested prompts */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid #333' }}>
           <p style={{ fontSize: '0.7rem', color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Suggested questions
           </p>
-          {STARTER_PROMPTS.map(q => (
+          {(suggestedQuestions.length > 0 ? suggestedQuestions : STARTER_PROMPTS).map(q => (
             <button key={q} onClick={() => sendMessage(q)}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 0', background: 'transparent', border: 'none', color: '#999', fontSize: '0.75rem', cursor: 'pointer', lineHeight: 1.4 }}
               onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
@@ -427,6 +449,36 @@ export function ChatInterface() {
                       onClick={() => rateMessage(m.id, 'up')} aria-label="Helpful">👍</button>
                     <button className={`chat-rate-btn${m.rating === 'down' ? ' active' : ''}`}
                       onClick={() => rateMessage(m.id, 'down')} aria-label="Not helpful">👎</button>
+                  </div>
+                )}
+                {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
+                  <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6 }}>
+                    <p style={{ fontSize: '0.68rem', color: '#888', marginBottom: 4,
+                                textTransform: 'uppercase', letterSpacing: '0.4px', fontWeight: 600 }}>
+                      📄 Sources
+                    </p>
+                    {m.sources.map((src, i) => (
+                      <div key={src.chunk_id || i}
+                        style={{ fontSize: '0.75rem', color: '#bbb', padding: '2px 0',
+                                 borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                                 paddingTop: i > 0 ? 4 : 2 }}>
+                        <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{src.document_title}</span>
+                        {src.score !== undefined && (
+                          <span style={{ marginLeft: 6, fontSize: '0.68rem', color: '#666' }}>
+                            ({Math.round(src.score * 100)}%)
+                          </span>
+                        )}
+                        {src.excerpt && (
+                          <p style={{ margin: '2px 0 0', color: '#777', fontSize: '0.7rem',
+                                      overflow: 'hidden', textOverflow: 'ellipsis',
+                                      display: '-webkit-box', WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical' }}>
+                            {src.excerpt}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

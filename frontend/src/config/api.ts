@@ -14,3 +14,4 @@ export const KB_API      = `${API_BASE}/api/v1/knowledge-bases`;
 export const CONTENT_API = `${API_BASE}/api/v1/content`;
 export const ADMIN_API   = `${API_BASE}/api/v1/admin`;
 export const LLM_API     = `${API_BASE}/api/internal/llm`;
+export const RAG_API     = `${API_BASE}/api/internal/rag`;

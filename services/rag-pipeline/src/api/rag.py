@@ -141,3 +141,65 @@ async def debug_vector_store(request: Request, kb_id: str = ""):
         "nonzero_dims": nonzero,
         "first_5_values": [round(v, 6) for v in vec[:5]],
     }
+
+
+# ── Suggested questions ────────────────────────────────────────────────────────
+
+@router.get("/suggested-questions")
+async def suggested_questions(knowledge_base_id: str, request: Request):
+    """Return 3-5 course-contextual suggested questions for the chat landing screen.
+
+    Retrieves representative chunks from the knowledge base, then calls the
+    LLM gateway to generate relevant questions. Falls back to a static list
+    if the LLM or RAG pipeline is unavailable.
+    """
+    service = request.app.state.rag_service
+
+    FALLBACK_QUESTIONS = [
+        "What are the key concepts covered in this course?",
+        "Can you summarise the main topics?",
+        "What are the most important things to learn here?",
+    ]
+
+    try:
+        # Pull a representative sample of chunks from the KB
+        sample_result = await service.retrieve(
+            query="overview introduction key concepts main topics",
+            knowledge_base_id=knowledge_base_id,
+            top_k=5,
+        )
+        chunks = sample_result.get("chunks", [])
+        if not chunks:
+            return {"knowledge_base_id": knowledge_base_id, "questions": FALLBACK_QUESTIONS}
+
+        context_text = "\n\n".join(c["text"][:300] for c in chunks[:4])
+        prompt = (
+            f"Based on the following course content, generate exactly 4 short, specific questions "
+            f"a learner might want to ask. Return ONLY a JSON array of strings. No markdown, no explanation.\n\n"
+            f"Content:\n{context_text}\n\nQuestions:"
+        )
+
+        import httpx
+        import os as _os
+        llm_url = _os.getenv("LLM_GATEWAY_URL", "http://llm-gateway:8003")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{llm_url}/api/internal/complete",
+                json={"messages": [{"role": "user", "content": prompt}], "max_tokens": 300},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("content") or data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        import json as _json
+        # Extract the JSON array from the response
+        start = content.find("[")
+        end   = content.rfind("]") + 1
+        if start >= 0 and end > start:
+            questions = _json.loads(content[start:end])
+            if isinstance(questions, list) and questions:
+                return {"knowledge_base_id": knowledge_base_id, "questions": questions[:5]}
+    except Exception as exc:
+        logger.warning("Suggested questions generation failed (fallback): %s", exc)
+
+    return {"knowledge_base_id": knowledge_base_id, "questions": FALLBACK_QUESTIONS}

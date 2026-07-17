@@ -174,10 +174,20 @@ class ChatOrchestratorService:
         sources = [
             {
                 "chunk_id":       c.get("id", c.get("chunk_id", "")),
+                "document_id":    c.get("document_id", ""),
                 "document_title": c.get("document_title", c.get("title", "Source")),
+                "score":          round(float(c.get("score", 0.0)), 3),
+                "excerpt":        (c.get("chunk_text", c.get("text", c.get("content", ""))) or "")[:200],
             }
             for c in rag_chunks
         ]
+        # Deduplicate by document_id, keeping highest-score chunk per document
+        _seen_docs: dict[str, dict] = {}
+        for s in sources:
+            doc_id = s["document_id"] or s["document_title"]
+            if doc_id not in _seen_docs or s["score"] > _seen_docs[doc_id]["score"]:
+                _seen_docs[doc_id] = s
+        sources = list(_seen_docs.values())
 
         session.messages.append(Message(role="user", content=user_message))
 
