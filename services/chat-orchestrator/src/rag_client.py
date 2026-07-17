@@ -5,6 +5,7 @@ import logging
 
 import httpx
 
+from agent import ReasonRequest  # shared contract from libs/contracts (WO-015)
 from rag import RetrieveRequest  # shared contract from libs/contracts (WO-013)
 from src.models import AGENT_REASONING_URL, RAG_SERVICE_URL
 
@@ -113,11 +114,7 @@ async def _fetch_web_context(query: str) -> list[dict]:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 f"{AGENT_REASONING_URL}/api/internal/agent/reason",
-                json={
-                    "query": query,
-                    # confidence=0 forces the agent to trigger web_search immediately
-                    "confidence": 0.0,
-                },
+                json=ReasonRequest(query=query, confidence=0.0).model_dump(exclude_none=True),
             )
             if resp.is_success:
                 data = resp.json()

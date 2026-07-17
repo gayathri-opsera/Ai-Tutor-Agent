@@ -1,19 +1,12 @@
 """Confidence grader API."""
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
 
+from grader import EvaluateRequest  # noqa: F401 — re-export from libs/contracts (WO-015)
 from src.grader import evaluate
 
 router = APIRouter(prefix="/api/internal/grader", tags=["grader"])
-
-
-class EvaluateRequest(BaseModel):
-    answer: str
-    chunks: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @router.post("/evaluate")

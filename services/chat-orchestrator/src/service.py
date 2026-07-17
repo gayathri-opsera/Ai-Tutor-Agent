@@ -8,6 +8,8 @@ from typing import AsyncIterator
 
 import httpx
 
+from agent import ReasonRequest  # shared contract from libs/contracts (WO-015)
+from grader import EvaluateRequest  # shared contract from libs/contracts (WO-015)
 from llm import CompletionRequest, Message as LLMMessage, MessageRole, ModelTier  # shared contracts (WO-014)
 from src.models import (
     ANALYTICS_SERVICE_URL,
@@ -249,7 +251,7 @@ class ChatOrchestratorService:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 grade_resp = await client.post(
                     f"{GRADER_SERVICE_URL}/api/internal/grader/evaluate",
-                    json={"answer": full_answer, "chunks": rag_chunks},
+                    json=EvaluateRequest(answer=full_answer, chunks=rag_chunks).model_dump(),
                 )
                 if grade_resp.status_code == 200:
                     grade_data = grade_resp.json()
