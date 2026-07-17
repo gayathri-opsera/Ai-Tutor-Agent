@@ -5,20 +5,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from src.main import create_app
-from src.service import (
-    ChatOrchestratorService,
-    DatabaseSessionRepository,
-    InMemorySessionCache,
-    MockSessionRepository,
-    Message,
-    Session,
+from src.models import (
     KB_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    Message,
+    Session,
     _GROUNDING_THRESHOLD,
     _NO_EVIDENCE_RESPONSE,
-    _demo_answer,
-    _fetch_web_context,
 )
+from src.rag_client import _demo_answer, _fetch_web_context
+from src.repository import DatabaseSessionRepository, InMemorySessionCache, MockSessionRepository
+from src.service import ChatOrchestratorService
 
 
 # ── Basic API ─────────────────────────────────────────────────────────────────

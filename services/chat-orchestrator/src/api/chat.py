@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from src.models import Session
 from src.service import ChatOrchestratorService
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -34,7 +35,7 @@ async def create_session(body: CreateSessionRequest, request: Request):
 @router.get("/sessions")
 async def list_sessions(user_id: str = Query(...), request: Request = None):
     svc: ChatOrchestratorService = request.app.state.chat_service
-    sessions = await svc.repository.list_sessions(user_id)
+    sessions = await svc.list_sessions(user_id)
     return {"sessions": sessions}
 
 
@@ -45,7 +46,7 @@ async def rename_session(session_id: str, body: RenameSessionRequest, request: R
     if not title:
         raise HTTPException(400, "Title cannot be empty")
     svc: ChatOrchestratorService = request.app.state.chat_service
-    ok = await svc.repository.rename_session(session_id, title)
+    ok = await svc.rename_session(session_id, title)
     if not ok:
         raise HTTPException(404, "Session not found")
     return {"id": session_id, "title": title}
@@ -54,24 +55,17 @@ async def rename_session(session_id: str, body: RenameSessionRequest, request: R
 @router.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, body: MessageRequest, request: Request):
     svc: ChatOrchestratorService = request.app.state.chat_service
-    session = await svc.cache.get(session_id)
+    session = await svc.get_session(session_id)
     if not session:
-        # Try loading from DB history so the session survives pod restarts
-        history = await svc.repository.get_history(session_id)
-        if history:
-            from src.service import Session
-            session = Session(id=session_id, user_id="", messages=history)
-            await svc.cache.set(session)
-        else:
-            raise HTTPException(404, "Session not found")
+        raise HTTPException(404, "Session not found")
 
     async def event_generator():
         kb_id = body.knowledge_base_id
         if kb_id:
-            s = await svc.cache.get(session_id)
+            s = await svc.get_session(session_id)
             if s:
                 s.knowledge_base_id = kb_id
-                await svc.cache.set(s)
+                await svc.update_session(s)
         async for event in svc.stream_response(session_id, body.content, rag_chunks=None):
             yield {"event": event.split("\n")[0].replace("event: ", ""), "data": event.split("data: ", 1)[-1].strip()}
 
@@ -81,7 +75,7 @@ async def send_message(session_id: str, body: MessageRequest, request: Request):
 @router.get("/sessions/{session_id}/history")
 async def get_history(session_id: str, request: Request):
     svc: ChatOrchestratorService = request.app.state.chat_service
-    messages = await svc.repository.get_history(session_id)
+    messages = await svc.get_history(session_id)
     return {
         "session_id": session_id,
         "messages": [
