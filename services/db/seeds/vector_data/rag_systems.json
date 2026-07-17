@@ -1,0 +1,19 @@
+{
+  "id": "seed-doc-003",
+  "title": "Retrieval-Augmented Generation (RAG) Systems",
+  "knowledge_base_id": "seed-kb-general",
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "Retrieval-Augmented Generation (RAG) is an AI framework that combines information retrieval with language generation. Instead of relying solely on the knowledge encoded in model parameters, RAG systems retrieve relevant documents from an external knowledge base and provide them as context to the language model. This approach reduces hallucinations, keeps responses grounded in factual sources, and allows the knowledge base to be updated without retraining the model."
+    },
+    {
+      "chunk_index": 1,
+      "text": "The RAG pipeline consists of three main stages: indexing, retrieval, and generation. During indexing, documents are chunked into smaller passages, embedded into dense vector representations using an embedding model, and stored in a vector database. During retrieval, the user's query is embedded and the most semantically similar chunks are found using approximate nearest-neighbour search (e.g. cosine similarity). During generation, the retrieved chunks are prepended to the prompt as context."
+    },
+    {
+      "chunk_index": 2,
+      "text": "Hybrid search combines dense vector retrieval (semantic similarity) with sparse keyword retrieval (BM25) to improve recall. Re-ranking models can further improve precision by scoring retrieved chunks for relevance to the query. Advanced RAG techniques include query rewriting, multi-hop retrieval, self-querying retrievers, and chain-of-thought prompting. Evaluation metrics include context relevance, faithfulness, and answer relevance (as measured by frameworks like RAGAS)."
+    }
+  ]
+}

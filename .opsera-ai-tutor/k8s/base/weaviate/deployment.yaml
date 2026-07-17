@@ -28,7 +28,16 @@ spec:
             - name: QUERY_DEFAULTS_LIMIT
               value: "25"
             - name: AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED
+              value: "false"
+            - name: AUTHENTICATION_APIKEY_ENABLED
               value: "true"
+            - name: AUTHENTICATION_APIKEY_ALLOWED_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: weaviate-api-key
+                  key: api-key
+            - name: AUTHENTICATION_APIKEY_USERS
+              value: "ai-tutor-service"
             - name: PERSISTENCE_DATA_PATH
               value: /var/lib/weaviate
             - name: DEFAULT_VECTORIZER_MODULE

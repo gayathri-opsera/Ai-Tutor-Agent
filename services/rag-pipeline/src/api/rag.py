@@ -28,7 +28,15 @@ _EMBED_BATCH_SIZE = 50  # keep each embedding call small to avoid timeouts
 
 
 async def _do_ingest(body: IngestRequest, service, db_pool) -> None:
-    """Background task: embed chunks and upsert into vector store + DB."""
+    """Background task: embed chunks and upsert into vector store + DB.
+
+    Implements chunk-level deduplication (WO-263):
+    - Each chunk text is hashed with SHA-256 (content_hash).
+    - If a chunk already exists in the DB with the same document_id, chunk_index,
+      AND matching content_hash, it is skipped — no embedding or upsert occurs.
+    - If the content_hash differs (chunk was updated), it is re-embedded and upserted.
+    """
+    import hashlib
     from src.vector_client import VectorRecord
 
     texts = [c.text for c in body.chunks]
@@ -40,38 +48,79 @@ async def _do_ingest(body: IngestRequest, service, db_pool) -> None:
     for batch_start in range(0, len(texts), _EMBED_BATCH_SIZE):
         batch_chunks = body.chunks[batch_start:batch_start + _EMBED_BATCH_SIZE]
         batch_texts  = [c.text for c in batch_chunks]
+
+        # Deduplication: load existing content hashes for this document/chunk range
+        abs_indices = [
+            c.chunk_index if c.chunk_index is not None else batch_start + i
+            for i, c in enumerate(batch_chunks)
+        ]
+        async with db_pool.acquire() as conn:
+            existing_rows = await conn.fetch(
+                """
+                SELECT chunk_index, content_hash, id AS vector_id
+                FROM document_chunks
+                WHERE document_id = $1 AND chunk_index = ANY($2::int[])
+                """,
+                body.document_id,
+                abs_indices,
+            )
+        existing_by_idx = {r["chunk_index"]: r for r in existing_rows}
+
+        # Determine which chunks need embedding
+        chunks_to_embed: list[tuple[int, int, object]] = []  # (batch_pos, abs_index, chunk)
+        for i, (chunk, abs_idx) in enumerate(zip(batch_chunks, abs_indices)):
+            new_hash = hashlib.sha256(chunk.text.encode()).hexdigest()
+            ex = existing_by_idx.get(abs_idx)
+            if ex and ex["content_hash"] == new_hash:
+                # Identical content — skip entirely
+                logger.debug("Skipping unchanged chunk %d for document %s", abs_idx, body.document_id)
+                continue
+            chunks_to_embed.append((i, abs_idx, chunk))
+
+        if not chunks_to_embed:
+            continue
+
+        embed_texts = [c.text for _, _, c in chunks_to_embed]
         try:
-            embeddings = await service._embed_batch(batch_texts)
+            embeddings = await service._embed_batch(embed_texts)
         except Exception as exc:
             logger.warning("Embedding batch %d-%d failed: %s — skipping",
-                           batch_start, batch_start + len(batch_texts), exc)
+                           batch_start, batch_start + len(embed_texts), exc)
             continue
 
         vector_records = []
         async with db_pool.acquire() as conn:
-            for i, (chunk, embedding) in enumerate(zip(batch_chunks, embeddings)):
+            for (_, abs_index, chunk), embedding in zip(chunks_to_embed, embeddings):
                 chunk_id = str(uuid.uuid4())
-                abs_index = batch_start + i
+                new_hash = hashlib.sha256(chunk.text.encode()).hexdigest()
                 metadata = {
                     "knowledge_base_id": body.knowledge_base_id,
                     "document_id": body.document_id,
                     "document_title": body.document_title,
                     "text": chunk.text,
-                    "chunk_index": chunk.chunk_index if chunk.chunk_index is not None else abs_index,
+                    "chunk_index": abs_index,
                     **chunk.metadata,
                 }
                 await conn.execute(
                     """
-                    INSERT INTO document_chunks (id, document_id, chunk_index, chunk_text, vector_id, metadata)
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-                    ON CONFLICT (id) DO NOTHING
+                    INSERT INTO document_chunks
+                      (id, document_id, chunk_index, chunk_text, vector_id, metadata, content_hash)
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+                    ON CONFLICT (document_id, chunk_index)
+                    DO UPDATE SET
+                      chunk_text   = EXCLUDED.chunk_text,
+                      vector_id    = EXCLUDED.vector_id,
+                      metadata     = EXCLUDED.metadata,
+                      content_hash = EXCLUDED.content_hash,
+                      updated_at   = now()
                     """,
                     chunk_id,
                     body.document_id,
-                    chunk.chunk_index if chunk.chunk_index is not None else abs_index,
+                    abs_index,
                     chunk.text,
                     chunk_id,
                     json.dumps(metadata),
+                    new_hash,
                 )
                 vector_records.append(VectorRecord(id=chunk_id, vector=embedding, metadata=metadata))
 
