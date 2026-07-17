@@ -1,0 +1,575 @@
+# Reusable deployment workflow for all ai-tutor services (WO-017).
+# Called by 14 thin per-service caller workflows via workflow_call.
+#
+# Implements 8 deployment stages:
+#   01 - Security Scan
+#   02 - Architectural Lint    (via shared-architectural-lint.yaml)
+#   03 - Contract Validation   (via shared-contract-validation.yaml)
+#   04 - Build Image
+#   05 - Grype Vulnerability Scan
+#   06 - Push to ECR
+#   07 - Update Manifests
+#   08 - Create ArgoCD Application
+#   09 - Refresh ECR Secret
+#   10 - ArgoCD Sync
+#   11 - Verify Deployment
+#   12 - Deployment Landscape
+#
+# Dockerfile patterns handled:
+#   service  → Dockerfile.service with --build-arg SERVICE=<name> --build-arg PORT=<port>
+#   ingestion → Dockerfile.content-ingestion (no SERVICE/PORT args)
+#   frontend  → .opsera-ai-tutor/Dockerfile.frontend
+#
+# Usage example:
+#   jobs:
+#     deploy:
+#       uses: ./.github/workflows/shared-deploy.yaml
+#       secrets: inherit
+#       with:
+#         service: chat-orchestrator
+#         port: "8004"
+#         ecr_repo: opsera/ai-tutor-chat-orchestrator
+#         placeholder_key: PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR
+#         dockerfile_pattern: service
+
+name: "Shared — Deploy ai-tutor Service"
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: "Service name (e.g. chat-orchestrator)"
+        required: true
+        type: string
+      port:
+        description: "Container port (e.g. '8004')"
+        required: true
+        type: string
+      ecr_repo:
+        description: "ECR repository path (e.g. opsera/ai-tutor-chat-orchestrator)"
+        required: true
+        type: string
+      placeholder_key:
+        description: "Placeholder key in k8s manifests for this service's image URI"
+        required: true
+        type: string
+      dockerfile_pattern:
+        description: "Dockerfile variant: 'service' | 'ingestion' | 'frontend'"
+        required: false
+        type: string
+        default: "service"
+      service_path:
+        description: "Service source path for architectural lint (e.g. services/chat-orchestrator)"
+        required: false
+        type: string
+        default: ""
+      contract_service_name:
+        description: "Service name for OpenAPI contract validation (matches validate_openapi.SERVICES key)"
+        required: false
+        type: string
+        default: ""
+
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      GH_PAT:
+        required: true
+      OPENAI_API_KEY:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+      GROQ_API_KEY:
+        required: false
+      DB_PASSWORD:
+        required: false
+      DATABASE_URL:
+        required: false
+      KEYCLOAK_CLIENT_SECRET:
+        required: false
+      KEYCLOAK_ADMIN_PASSWORD:
+        required: false
+      JWT_SECRET:
+        required: false
+      S3_ACCESS_KEY:
+        required: false
+      S3_SECRET_KEY:
+        required: false
+      GITHUB_TOKEN:
+        required: false
+
+# Minimal permissions for this shared workflow.
+# Callers must pass secrets: inherit for AWS/GH_PAT access.
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  HUB_CLUSTER: argocd-usw2
+  SPOKE_CLUSTER: opsera-usw2-np
+  NAMESPACE: opsera-ai-tutor-dev
+
+jobs:
+  # ── Stage 01 ────────────────────────────────────────────────────────────────
+  security-scan:
+    name: "01 - Security Scan"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    continue-on-error: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  # ── Stage 02 ────────────────────────────────────────────────────────────────
+  architectural-lint:
+    name: "02 - Architectural Lint"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    needs: [security-scan]
+    with:
+      service_path: ${{ inputs.service_path != '' && inputs.service_path || format('services/{0}', inputs.service) }}
+
+  # ── Stage 03 ────────────────────────────────────────────────────────────────
+  contract-validation:
+    name: "03 - Contract Validation"
+    uses: ./.github/workflows/shared-contract-validation.yaml
+    needs: [security-scan]
+    with:
+      service_name: ${{ inputs.contract_service_name != '' && inputs.contract_service_name || inputs.service }}
+
+  # ── Stage 04 ────────────────────────────────────────────────────────────────
+  build-image:
+    name: "04 - Build Image"
+    runs-on: ubuntu-latest
+    needs: [security-scan, architectural-lint, contract-validation]
+    permissions:
+      contents: read
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+      ecr_uri: ${{ steps.ecr.outputs.uri }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Generate Image Tag
+        id: tag
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          echo "tag=dev-${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get ECR URI
+        id: ecr
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "uri=${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ inputs.ecr_repo }}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker Image (service pattern)
+        if: inputs.dockerfile_pattern == 'service' || inputs.dockerfile_pattern == ''
+        run: |
+          docker build \
+            -f Dockerfile.service \
+            --build-arg SERVICE=${{ inputs.service }} \
+            --build-arg PORT=${{ inputs.port }} \
+            -t ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
+            .
+
+      - name: Build Docker Image (ingestion pattern)
+        if: inputs.dockerfile_pattern == 'ingestion'
+        run: |
+          docker build \
+            -f Dockerfile.content-ingestion \
+            -t ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
+            .
+
+      - name: Build Docker Image (frontend pattern)
+        if: inputs.dockerfile_pattern == 'frontend'
+        run: |
+          docker build \
+            -f .opsera-ai-tutor/Dockerfile.frontend \
+            -t ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
+            .
+
+      - name: Save Image Artifact
+        run: |
+          docker save ${{ steps.ecr.outputs.uri }}:${{ steps.tag.outputs.tag }} \
+            -o /tmp/${{ inputs.service }}-image.tar
+
+      - name: Upload Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-image
+          path: /tmp/${{ inputs.service }}-image.tar
+          retention-days: 1
+
+  # ── Stage 05 ────────────────────────────────────────────────────────────────
+  grype-scan:
+    name: "05 - Grype Vulnerability Scan"
+    runs-on: ubuntu-latest
+    needs: [build-image]
+    permissions:
+      contents: read
+      security-events: write
+    continue-on-error: true
+    steps:
+      - name: Download Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.service }}-image
+          path: /tmp
+      - name: Load Image
+        run: docker load -i /tmp/${{ inputs.service }}-image.tar
+      - name: Run Grype Scan
+        uses: anchore/scan-action@v3
+        id: scan
+        with:
+          image: ${{ needs.build-image.outputs.ecr_uri }}:${{ needs.build-image.outputs.image_tag }}
+          fail-build: false
+          severity-cutoff: critical
+          output-format: sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+        continue-on-error: true
+
+  # ── Stage 06 ────────────────────────────────────────────────────────────────
+  push-to-ecr:
+    name: "06 - Push to ECR"
+    runs-on: ubuntu-latest
+    needs: [build-image, grype-scan]
+    if: always() && needs.build-image.result == 'success'
+    permissions:
+      contents: read
+    steps:
+      - name: Download Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.service }}-image
+          path: /tmp
+      - name: Load Image
+        run: docker load -i /tmp/${{ inputs.service }}-image.tar
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Push to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin \
+            "${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          docker push ${{ needs.build-image.outputs.ecr_uri }}:${{ needs.build-image.outputs.image_tag }}
+          echo "✅ Pushed ${{ needs.build-image.outputs.image_tag }}"
+
+  # ── Stage 07 ────────────────────────────────────────────────────────────────
+  update-manifests:
+    name: "07 - Update Manifests"
+    runs-on: ubuntu-latest
+    needs: [build-image, push-to-ecr]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Write Service Image Patch
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_URI="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ inputs.ecr_repo }}"
+          IMAGE_TAG="${{ needs.build-image.outputs.image_tag }}"
+          SVC="${{ inputs.service }}"
+          PATCH_FILE=".opsera-ai-tutor/k8s/overlays/dev/${SVC}-image.yaml"
+
+          echo "apiVersion: apps/v1"                           >  "${PATCH_FILE}"
+          echo "kind: Deployment"                              >> "${PATCH_FILE}"
+          echo "metadata:"                                     >> "${PATCH_FILE}"
+          echo "  name: ${SVC}"                               >> "${PATCH_FILE}"
+          echo "spec:"                                         >> "${PATCH_FILE}"
+          echo "  template:"                                   >> "${PATCH_FILE}"
+          echo "    spec:"                                     >> "${PATCH_FILE}"
+          echo "      containers:"                             >> "${PATCH_FILE}"
+          echo "        - name: ${SVC}"                       >> "${PATCH_FILE}"
+          echo "          image: ${ECR_URI}:${IMAGE_TAG}"     >> "${PATCH_FILE}"
+
+          echo "✅ Updated ${PATCH_FILE} → ${ECR_URI}:${IMAGE_TAG}"
+
+      - name: Validate Kustomize Build
+        run: |
+          kubectl kustomize .opsera-ai-tutor/k8s/overlays/dev > /dev/null \
+            && echo "✅ Kustomize validation passed" \
+            || (echo "❌ Kustomize build failed"; exit 1)
+
+      - name: Commit and Push Service Patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          PATCH_FILE=".opsera-ai-tutor/k8s/overlays/dev/${{ inputs.service }}-image.yaml"
+
+          if git diff --quiet "${PATCH_FILE}"; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git add "${PATCH_FILE}"
+          git commit -m "chore(deploy): update ${{ inputs.service }} to ${{ needs.build-image.outputs.image_tag }} [skip ci]"
+
+          for i in 1 2 3; do
+            if git push origin main; then
+              echo "✅ Pushed manifest update"
+              exit 0
+            fi
+            echo "Push conflict, rebasing... (${i}/3)"
+            if git pull --rebase origin main; then
+              sleep 2
+              continue
+            fi
+            git checkout --ours "${PATCH_FILE}"
+            git add "${PATCH_FILE}"
+            GIT_EDITOR=true git rebase --continue
+            sleep 2
+          done
+          exit 1
+
+  # ── Stage 08 ────────────────────────────────────────────────────────────────
+  create-argocd-app:
+    name: "08 - Create ArgoCD Application"
+    runs-on: ubuntu-latest
+    needs: [update-manifests]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+      - name: Setup Hub Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Apply ArgoCD Application
+        run: |
+          kubectl apply -f .opsera-ai-tutor/argocd/dev/application.yaml
+          echo "✅ ArgoCD application opsera-ai-tutor-dev created/updated"
+
+  # ── Stage 09 ────────────────────────────────────────────────────────────────
+  refresh-ecr-secret:
+    name: "09 - Refresh ECR Secret"
+    runs-on: ubuntu-latest
+    needs: [create-argocd-app]
+    permissions:
+      contents: read
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+      - name: Setup Spoke Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Create Application Secrets
+        run: |
+          kubectl create secret generic ai-tutor-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            --from-literal=GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}" \
+            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=KEYCLOAK_CLIENT_SECRET="${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
+            --from-literal=KEYCLOAK_ADMIN_PASSWORD="${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            --from-literal=S3_ACCESS_KEY="${{ secrets.S3_ACCESS_KEY }}" \
+            --from-literal=S3_SECRET_KEY="${{ secrets.S3_SECRET_KEY }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ ai-tutor-secrets applied in ${{ env.NAMESPACE }}"
+
+      - name: Refresh ECR Image Pull Secret
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          kubectl create secret docker-registry ecr-registry-secret \
+            --namespace=${{ env.NAMESPACE }} \
+            --docker-server="${ECR_REGISTRY}" \
+            --docker-username=AWS \
+            --docker-password="$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ ECR pull secret refreshed"
+
+  # ── Stage 10 ────────────────────────────────────────────────────────────────
+  argocd-sync:
+    name: "10 - ArgoCD Sync"
+    runs-on: ubuntu-latest
+    needs: [refresh-ecr-secret]
+    permissions:
+      contents: read
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+      - name: Setup Hub Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.HUB_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Refresh ArgoCD Repository Credentials
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -z "${GH_PAT}" ]; then
+            echo "❌ GH_PAT secret missing — ArgoCD cannot read private repo manifests"
+            exit 1
+          fi
+          REPO_SECRET_NAME="repo-$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')-${{ inputs.service }}"
+          REPO_URL="https://github.com/${{ github.repository }}.git"
+          kubectl delete secret "${REPO_SECRET_NAME}" -n argocd --ignore-not-found
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ${REPO_SECRET_NAME}
+            namespace: argocd
+            labels:
+              argocd.argoproj.io/secret-type: repository
+          type: Opaque
+          stringData:
+            type: git
+            url: ${REPO_URL}
+            password: ${GH_PAT}
+            username: git
+          EOF
+          echo "✅ Refreshed ArgoCD credentials for ${REPO_URL}"
+
+      - name: ArgoCD Hard Refresh
+        run: |
+          kubectl patch app opsera-ai-tutor-dev -n argocd --type merge \
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+          sleep 5
+
+      - name: Trigger Sync
+        run: |
+          kubectl patch app opsera-ai-tutor-dev -n argocd --type merge \
+            -p '{"operation":{"initiatedBy":{"username":"github-actions"},"sync":{"revision":"main","prune":true}}}'
+
+      - name: Wait for Sync to Complete
+        run: |
+          APP="opsera-ai-tutor-dev"
+          for i in $(seq 1 60); do
+            PHASE=$(kubectl get app ${APP} -n argocd \
+              -o jsonpath='{.status.operationState.phase}' 2>/dev/null || echo "Unknown")
+            HEALTH=$(kubectl get app ${APP} -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+            echo "[$i/60] Health: ${HEALTH} | Phase: ${PHASE}"
+            if [ "${PHASE}" = "Succeeded" ]; then
+              echo "✅ ArgoCD sync operation Succeeded (Health: ${HEALTH})"
+              exit 0
+            fi
+            if [ "${PHASE}" = "Failed" ] || [ "${PHASE}" = "Error" ]; then
+              MSG=$(kubectl get app ${APP} -n argocd \
+                -o jsonpath='{.status.operationState.message}' 2>/dev/null || echo "")
+              echo "❌ ArgoCD sync failed: ${PHASE} — ${MSG}"
+              kubectl get app ${APP} -n argocd -o yaml
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "⚠️ Sync poll timed out after 10 minutes"
+          kubectl get app ${APP} -n argocd -o yaml
+          exit 1
+
+  # ── Stage 11 ────────────────────────────────────────────────────────────────
+  verify-deployment:
+    name: "11 - Verify Deployment"
+    runs-on: ubuntu-latest
+    needs: [refresh-ecr-secret, argocd-sync]
+    permissions:
+      contents: read
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+      - name: Setup Spoke Kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+      - name: Wait for Deployment
+        run: |
+          for i in $(seq 1 60); do
+            kubectl get deployment ${{ inputs.service }} -n ${{ env.NAMESPACE }} &>/dev/null && break
+            echo "⏳ Waiting... (${i}/60)"; sleep 5
+          done
+      - name: Verify Ready
+        run: |
+          kubectl wait --for=condition=available --timeout=300s \
+            deployment/${{ inputs.service }} -n ${{ env.NAMESPACE }}
+          RUNNING=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=${{ inputs.service }} \
+            --field-selector=status.phase=Running -o name | wc -l)
+          echo "✅ ${RUNNING} pod(s) running for ${{ inputs.service }}"
+
+  # ── Stage 12 ────────────────────────────────────────────────────────────────
+  deployment-landscape:
+    name: "12 - Deployment Landscape"
+    runs-on: ubuntu-latest
+    needs: [verify-deployment]
+    if: success()
+    permissions:
+      contents: read
+    steps:
+      - name: Summary
+        run: |
+          echo "==========================================="
+          echo " DEPLOYED: ai-tutor / ${{ inputs.service }} / dev"
+          echo " Tag: ${{ needs.build-image.outputs.image_tag }}"
+          echo " Namespace: ${{ env.NAMESPACE }}"
+          echo " Port: ${{ inputs.port }}"
+          echo "==========================================="
