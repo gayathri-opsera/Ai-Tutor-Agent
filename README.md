@@ -163,3 +163,45 @@ All PostgreSQL tables include a `data_classification` column:
 | `RESTRICTED` | User PII (encrypted at rest), audit logs |
 
 PII fields (`email`, `full_name`, `notes`) are stored as AES-256 encrypted `bytea` with a separate SHA-256 hash column for lookups.
+
+## Shared Libraries (`libs/`)
+
+All cross-cutting concerns live in `libs/` and are copied into every service container via `Dockerfile.service`.
+
+| Library | Purpose | Key File |
+|---|---|---|
+| `libs/auth` | JWT validation + inter-service trust | `src/service_middleware.py` |
+| `libs/kafka` | Producers, consumers, schema registry | `src/schema_registry.py` |
+| `libs/model` | LLM provider abstraction (strategy pattern) | `src/gateway_provider.py` |
+| `libs/secrets` | Secrets provider with prod-safety guards | `src/provider.py` |
+| `libs/db` | Shared asyncpg pool factory | `src/pool.py` |
+| `libs/contracts` | Pydantic contracts shared between services | `src/` |
+
+### Inter-Service Trust (`ServiceAuthMiddleware`)
+
+Every internal-facing service applies `ServiceAuthMiddleware` from `libs/auth`.  
+Requests must carry either:
+- `Authorization: Bearer <user-jwt>` — for user-initiated requests
+- `X-Service-Token: <token>` + `X-Service-Name: <name>` — for service-to-service calls (value from `SERVICE_INTERNAL_TOKEN` env var)
+
+### Kafka Schema Registry (`libs/kafka/src/schema_registry.py`)
+
+`schema_registry.py` maps every topic name to a canonical Pydantic model from `libs/kafka/src/schemas/events.py`.  
+Producers validate payloads before signing; consumers validate after signature verification.  
+Add a new topic by:
+1. Define the event model in `src/schemas/events.py`
+2. Add the mapping in `src/schema_registry.py`
+3. Reference the `TopicSpec` in `src/topics.py`
+
+### Content Knowledge Domain Seeding (`seed_vectors.py`)
+
+`seed_vectors.py` is the canonical entry point for bootstrapping any knowledge domain.  
+It follows a structured JSON contract — one file per domain — meaning any engineer can add a new subject area without knowing the embedding mechanics.  
+See `docs/adr/ADR-006-rag-architecture.md` for the full design rationale.
+
+### AI Model Abstraction (`libs/model`)
+
+All LLM calls go through `GatewayModelProvider` (implements `ModelProvider` interface).  
+Services never import a concrete provider SDK directly.  
+Swap models or add routing by changing `LLM_GATEWAY_URL` — no service code changes needed.  
+See `docs/adr/` for the full Architecture Decision Record set.

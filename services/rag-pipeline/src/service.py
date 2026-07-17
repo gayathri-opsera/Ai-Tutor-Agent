@@ -9,17 +9,10 @@ import httpx
 from embedding import EmbedRequest  # shared contract from libs/contracts (WO-014)
 from src.hybrid_search import hybrid_search
 from src.reranker import reciprocal_rank_fusion
+from libs.model.src.provider import ModelProvider  # bundled via Dockerfile COPY libs/
+from libs.model.src.gateway_provider import GatewayModelProvider  # bundled via Dockerfile COPY libs/
 
 logger = logging.getLogger(__name__)
-
-try:
-    from libs.model.src.provider import ModelProvider  # type: ignore[import]
-    from libs.model.src.gateway_provider import GatewayModelProvider  # type: ignore[import]
-    _MODEL_PROVIDER_AVAILABLE = True
-except ImportError:
-    ModelProvider = None  # type: ignore[assignment,misc]
-    GatewayModelProvider = None  # type: ignore[assignment,misc]
-    _MODEL_PROVIDER_AVAILABLE = False
 
 
 class VectorDBClientProtocol(Protocol):
@@ -57,13 +50,8 @@ class RAGPipelineService:
     ) -> None:
         self.vector_client = vector_client
         self.embedding_url = embedding_url.rstrip("/")
-        # Prefer the injected provider; fall back to GatewayModelProvider; then httpx.
-        if model_provider is not None:
-            self._model_provider = model_provider
-        elif _MODEL_PROVIDER_AVAILABLE and GatewayModelProvider is not None:
-            self._model_provider = GatewayModelProvider()
-        else:
-            self._model_provider = None
+        # Prefer the injected provider; fall back to GatewayModelProvider (routes via llm-gateway).
+        self._model_provider: ModelProvider = model_provider if model_provider is not None else GatewayModelProvider()
         self._http = http_client
 
     async def retrieve(
@@ -99,20 +87,15 @@ class RAGPipelineService:
         return {"chunks": ranked, "query_embedding": embedding}
 
     async def _embed(self, text: str) -> list[float]:
-        # Fast path: use the injected ModelProvider (GatewayModelProvider by default).
-        # This removes the hardcoded embedding-service URL and routes through the
-        # LLM Gateway — a single authoritative HTTP client with retry/auth baked in.
-        if self._model_provider is not None:
-            try:
-                vectors = await self._model_provider.embed([text])
-                return vectors[0]
-            except Exception as exc:
-                logger.warning(
-                    "ModelProvider.embed failed (%s) — falling back to direct embedding-service call",
-                    exc,
-                )
+        # Route through GatewayModelProvider (via llm-gateway) — removes the
+        # hardcoded embedding-service URL dependency (Strike #3).
+        try:
+            vectors = await self._model_provider.embed([text])
+            return vectors[0]
+        except Exception as exc:
+            logger.warning("ModelProvider.embed failed (%s) — falling back to direct embedding-service call", exc)
 
-        # Legacy fallback: call the embedding-service directly via httpx.
+        # Fallback: call the embedding-service directly via httpx.
         client = self._http or httpx.AsyncClient()
         close_client = self._http is None
         try:
