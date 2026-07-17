@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.embeddings import router as embed_router
@@ -24,6 +25,7 @@ def create_app() -> FastAPI:
         version="1.0.0",
     )
 
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

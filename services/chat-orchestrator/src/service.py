@@ -1,6 +1,7 @@
 """Chat orchestrator service — connects sessions to LLM Gateway + RAG pipeline."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -157,14 +158,20 @@ class ChatOrchestratorService:
             session = Session(id=session_id, user_id="unknown")
 
         if rag_chunks is None:
-            rag_chunks = await _fetch_rag_context(user_message, session.knowledge_base_id)
-
-        kb_scoped = bool(session.knowledge_base_id)
-        if not rag_chunks and not kb_scoped:
-            web_chunks = await _fetch_web_context(user_message)
-            if web_chunks:
-                rag_chunks = web_chunks
-                logger.debug("Web search returned %d chunks for query: %.60s", len(web_chunks), user_message)
+            kb_scoped = bool(session.knowledge_base_id)
+            if not kb_scoped:
+                # Fetch RAG and web context in parallel — avoids sequential N+1 latency.
+                rag_chunks, web_chunks = await asyncio.gather(
+                    _fetch_rag_context(user_message, session.knowledge_base_id),
+                    _fetch_web_context(user_message),
+                )
+                if not rag_chunks and web_chunks:
+                    rag_chunks = web_chunks
+                    logger.debug("Web search returned %d chunks for query: %.60s", len(web_chunks), user_message)
+            else:
+                rag_chunks = await _fetch_rag_context(user_message, session.knowledge_base_id)
+        else:
+            kb_scoped = bool(session.knowledge_base_id)
 
         has_grounding = self._chunk_has_grounding(rag_chunks)
         rag_context = "\n\n".join(

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.vector_client import VectorDBClient, VectorRecord
@@ -18,11 +19,13 @@ from src.service import RAGPipelineService
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor",
-)
-WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://weaviate:8080")
+try:
+    from provider import get_db_dsn, get_weaviate_url  # type: ignore[import]
+    DATABASE_URL = get_db_dsn()
+    WEAVIATE_URL = get_weaviate_url()
+except ImportError:
+    DATABASE_URL = os.environ["DATABASE_URL"]
+    WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://weaviate:8080")
 
 
 async def _ensure_watermark_table(pool: asyncpg.Pool) -> None:
@@ -139,6 +142,7 @@ async def lifespan(app: FastAPI):
 
 def create_app(rag_service=None) -> FastAPI:
     _app = FastAPI(title="RAG Pipeline", version="1.0.0", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
     _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
     _app.include_router(rag_router)
     if rag_service is not None:

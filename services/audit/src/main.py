@@ -1,6 +1,7 @@
-"""Audit Logging Service — PostgreSQL-backed."""
+"""Audit Logging Service — PostgreSQL-backed, immutable append-only log."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -11,19 +12,30 @@ from typing import Any
 
 import asyncpg
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
-DB_DSN = os.getenv(
-    "DATABASE_URL",
-    "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor",
-)
+# Credential loaded via shared secrets provider — no plaintext fallback in code.
+try:
+    from provider import get_db_dsn  # type: ignore[import]
+    DB_DSN = get_db_dsn()
+except ImportError:
+    DB_DSN = os.environ["DATABASE_URL"]
+
+# Explicit column projection — avoids fetching large metadata JSONB on list queries.
+_AUDIT_COLS = "id, actor_id, action, resource_type, resource_id, outcome, metadata, created_at"
+
+# Pool sizing constants (named rather than magic numbers).
+_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
+_POOL_MAX = int(os.getenv("DB_POOL_MAX", "5"))
 
 
 class AuditLogRequest(BaseModel):
     action: str
-    user_id: str           # maps to actor_id
+    actor_id: str          # canonical field name — same as the DB column
     resource_id: str
     resource_type: str = "generic"
     outcome: str = "success"
@@ -48,13 +60,14 @@ class AuditLogListResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
+    pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=_POOL_MIN, max_size=_POOL_MAX)
     app.state.pool = pool
     yield
     await pool.close()
 
 
 app = FastAPI(title="Audit Logging Service", version="1.0.0", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.get("/health")
@@ -72,12 +85,12 @@ async def create_audit_log(request: AuditLogRequest) -> AuditLogResponse:
             INSERT INTO audit_logs (id, actor_id, action, resource_type, resource_id, outcome, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
             """,
-            entry_id, request.user_id, request.action,
+            entry_id, request.actor_id, request.action,
             request.resource_type, request.resource_id,
             request.outcome, json.dumps(request.metadata),
         )
     return AuditLogResponse(
-        id=entry_id, action=request.action, actor_id=request.user_id,
+        id=entry_id, action=request.action, actor_id=request.actor_id,
         resource_id=request.resource_id, resource_type=request.resource_type,
         outcome=request.outcome, metadata=request.metadata, timestamp=now,
     )
@@ -85,29 +98,47 @@ async def create_audit_log(request: AuditLogRequest) -> AuditLogResponse:
 
 @app.get("/api/v1/audit/logs", response_model=AuditLogListResponse)
 async def list_audit_logs(
-    user_id: str | None = None,
+    actor_id: str | None = None,
     action: str | None = None,
     limit: int = 100,
 ) -> AuditLogListResponse:
     async with app.state.pool.acquire() as conn:
-        total = await conn.fetchval("SELECT COUNT(*) FROM audit_logs")
-        if user_id and action:
-            rows = await conn.fetch(
-                "SELECT * FROM audit_logs WHERE actor_id=$1 AND action=$2 ORDER BY created_at DESC LIMIT $3",
-                user_id, action, limit,
+        # Filtered COUNT avoids a full table scan when filters are active.
+        if actor_id and action:
+            total, rows = await asyncio.gather(
+                conn.fetchval(
+                    "SELECT COUNT(*) FROM audit_logs WHERE actor_id=$1 AND action=$2",
+                    actor_id, action,
+                ),
+                conn.fetch(
+                    f"SELECT {_AUDIT_COLS} FROM audit_logs WHERE actor_id=$1 AND action=$2 ORDER BY created_at DESC LIMIT $3",
+                    actor_id, action, limit,
+                ),
             )
-        elif user_id:
-            rows = await conn.fetch(
-                "SELECT * FROM audit_logs WHERE actor_id=$1 ORDER BY created_at DESC LIMIT $2",
-                user_id, limit,
+        elif actor_id:
+            total, rows = await asyncio.gather(
+                conn.fetchval("SELECT COUNT(*) FROM audit_logs WHERE actor_id=$1", actor_id),
+                conn.fetch(
+                    f"SELECT {_AUDIT_COLS} FROM audit_logs WHERE actor_id=$1 ORDER BY created_at DESC LIMIT $2",
+                    actor_id, limit,
+                ),
             )
         elif action:
-            rows = await conn.fetch(
-                "SELECT * FROM audit_logs WHERE action=$1 ORDER BY created_at DESC LIMIT $2",
-                action, limit,
+            total, rows = await asyncio.gather(
+                conn.fetchval("SELECT COUNT(*) FROM audit_logs WHERE action=$1", action),
+                conn.fetch(
+                    f"SELECT {_AUDIT_COLS} FROM audit_logs WHERE action=$1 ORDER BY created_at DESC LIMIT $2",
+                    action, limit,
+                ),
             )
         else:
-            rows = await conn.fetch("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1", limit)
+            total, rows = await asyncio.gather(
+                conn.fetchval("SELECT COUNT(*) FROM audit_logs"),
+                conn.fetch(
+                    f"SELECT {_AUDIT_COLS} FROM audit_logs ORDER BY created_at DESC LIMIT $1",
+                    limit,
+                ),
+            )
 
     return AuditLogListResponse(
         entries=[
@@ -130,7 +161,9 @@ async def list_audit_logs(
 @app.get("/api/v1/audit/logs/{log_id}", response_model=AuditLogResponse)
 async def get_audit_log(log_id: str) -> AuditLogResponse:
     async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM audit_logs WHERE id=$1::uuid", log_id)
+        row = await conn.fetchrow(
+            f"SELECT {_AUDIT_COLS} FROM audit_logs WHERE id=$1::uuid", log_id
+        )
     if not row:
         raise HTTPException(status_code=404, detail=f"Audit log {log_id!r} not found")
     return AuditLogResponse(

@@ -12,7 +12,7 @@ import asyncpg
 
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor",
+    "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor"  # local-dev only — set DATABASE_URL in production,
 )
 
 

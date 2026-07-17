@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="https://agent.opsera.ai/favicon.png">
+  <title>Security Scan Report - [Project]</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --primary: #9947EB;
+      --primary-hover: #8234d4;
+      --accent: #CF940C;
+      --bg: #ffffff;
+      --bg-secondary: #F3F3F1;
+      --card: #ffffff;
+      --card-hover: #fafafa;
+      --text: #3D3B36;
+      --text-light: #67788d;
+      --border: #E6E5E3;
+      --border-light: #f0efed;
+      --success: #00AA84;
+      --warning: #CF940C;
+      --danger: #dc3545;
+      --info: #1989F9;
+      --critical: #dc3545;
+      --high: #c05621;
+      --medium: #CF940C;
+      --low: #00AA84;
+      --code-bg: #1e1e2e;
+      --code-text: #cdd6f4;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+      --radius: 0.5rem;
+      --sidebar-width: 260px;
+    }
+    [data-theme="dark"] {
+      --primary: #b87aed;
+      --primary-hover: #a05ee0;
+      --accent: #F0B324;
+      --bg: #16181d;
+      --bg-secondary: #1e2028;
+      --card: #1e2028;
+      --card-hover: #262830;
+      --text: #f2f2f2;
+      --text-light: #a6a6a6;
+      --border: #2e3038;
+      --border-light: #262830;
+      --success: #00CC9E;
+      --warning: #F0B324;
+      --danger: #f06070;
+      --info: #4da6ff;
+      --critical: #f06070;
+      --high: #e89040;
+      --medium: #F0B324;
+      --low: #00CC9E;
+      --code-bg: #11111b;
+      --code-text: #cdd6f4;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+      --shadow-md: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.7;
+      -webkit-font-smoothing: antialiased; transition: background 0.3s, color 0.3s;
+    }
+    h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+    h2 { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em; color: var(--primary); }
+    h3 { font-size: 1.1rem; font-weight: 600; color: var(--primary); margin-top: 1.25rem; margin-bottom: 0.5rem; }
+    h4 { font-size: 0.95rem; font-weight: 600; color: var(--text); margin-top: 1rem; margin-bottom: 0.4rem; }
+    p { margin-bottom: 0.75rem; }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { color: var(--primary-hover); text-decoration: underline; }
+    ul, ol { margin: 0.5rem 0 0.75rem 1.5rem; }
+    li { margin-bottom: 0.25rem; }
+
+    /* Page layout: header on top, sidebar + content below */
+    .page-wrapper { display: flex; min-height: calc(100vh - var(--header-height, 0px)); }
+    .header ~ .page-wrapper { --header-height: auto; }
+
+    /* Sidebar */
+    .sidebar {
+      position: sticky; top: 0; width: var(--sidebar-width); height: 100vh;
+      background: var(--card); border-right: 1px solid var(--border);
+      overflow-y: auto; z-index: 100; display: flex; flex-direction: column;
+      flex-shrink: 0; transition: background 0.3s, border-color 0.3s;
+    }
+    .sidebar-nav { flex: 1; overflow-y: auto; padding: 0.75rem 0; }
+    .sidebar-nav::-webkit-scrollbar { width: 3px; }
+    .sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .sidebar-group-label {
+      padding: 0.6rem 1.25rem 0.3rem; font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-light);
+    }
+    .sidebar-link {
+      display: block; padding: 0.35rem 1.25rem 0.35rem 1.25rem; font-size: 0.82rem;
+      color: var(--text-light); text-decoration: none; border-left: 3px solid transparent;
+      transition: all 0.15s ease; line-height: 1.4;
+    }
+    .sidebar-link:hover { color: var(--text); background: var(--bg-secondary); text-decoration: none; }
+    .sidebar-link.active {
+      color: var(--primary); border-left-color: var(--primary);
+      background: rgba(153,71,235,0.06); font-weight: 500;
+    }
+    [data-theme="dark"] .sidebar-link.active { background: rgba(184,122,237,0.08); }
+    .sidebar-link.sub { padding-left: 2rem; font-size: 0.78rem; }
+    .sidebar-footer {
+      padding: 0.75rem 1.25rem; border-top: 1px solid var(--border);
+      flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
+    }
+    .sidebar-theme-btn {
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: 999px; padding: 0.4rem; cursor: pointer;
+      display: flex; align-items: center; transition: all 0.2s;
+    }
+    .sidebar-theme-btn:hover { background: var(--card-hover); }
+    .sidebar-theme-btn svg { width: 16px; height: 16px; }
+    .sidebar-theme-btn .sun { display: none; color: var(--accent); }
+    .sidebar-theme-btn .moon { display: block; color: var(--text-light); }
+    [data-theme="dark"] .sidebar-theme-btn .sun { display: block; }
+    [data-theme="dark"] .sidebar-theme-btn .moon { display: none; }
+    .sidebar-theme-label { font-size: 0.75rem; color: var(--text-light); }
+
+    /* Mobile hamburger */
+    .sidebar-toggle {
+      display: none; position: fixed; top: 0.75rem; left: 0.75rem; z-index: 200;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.5rem; cursor: pointer; box-shadow: var(--shadow-md);
+    }
+    .sidebar-toggle svg { width: 20px; height: 20px; color: var(--text); }
+    .sidebar-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90;
+    }
+
+    /* Main content fills remaining width */
+    .page-main { flex: 1; min-width: 0; }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #250e3c 0%, #9947EB 60%, #CF940C 100%);
+      color: #ffffff; padding: 2.5rem 2rem; position: relative; overflow: hidden;
+    }
+    .header::after {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 70% 50%, rgba(153,71,235,0.3) 0%, transparent 70%);
+    }
+    .header-content {
+      max-width: 1100px; margin: 0 auto; display: flex;
+      align-items: center; gap: 1.5rem; position: relative; z-index: 1;
+    }
+    .header-logo { flex-shrink: 0; }
+    .header-logo img { height: 36px; width: auto; }
+    .header-text { flex: 1; }
+    .header h1 { color: #ffffff; margin-bottom: 0.4rem; }
+    .header .meta { opacity: 0.85; font-size: 0.875rem; font-weight: 400; }
+
+    /* Layout */
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .section {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 2rem; margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-sm); transition: background 0.3s, border-color 0.3s;
+    }
+    .section h2 {
+      border-bottom: 2px solid var(--primary); padding-bottom: 0.5rem; margin-bottom: 1.25rem;
+    }
+    .act-divider {
+      text-align: center; padding: 1.5rem 0; margin: 1rem 0;
+      font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-light);
+      border-top: 2px solid var(--border);
+    }
+
+    /* STRIDE Threat Analysis */
+    .stride-grid {
+      display: grid; grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem; margin-bottom: 1.5rem;
+    }
+    .stride-card {
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1rem 0.75rem; text-align: center;
+      position: relative; overflow: hidden;
+    }
+    .stride-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .stride-card.spoofing::before { background: var(--info); }
+    .stride-card.tampering::before { background: var(--high); }
+    .stride-card.repudiation::before { background: var(--text-light); }
+    .stride-card.info-disclosure::before { background: var(--critical); }
+    .stride-card.denial-of-service::before { background: var(--warning); }
+    .stride-card.elevation::before { background: var(--primary); }
+    .stride-icon {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem;
+    }
+    .spoofing .stride-icon { background: var(--info); }
+    .tampering .stride-icon { background: var(--high); }
+    .repudiation .stride-icon { background: var(--text-light); }
+    .info-disclosure .stride-icon { background: var(--critical); }
+    .denial-of-service .stride-icon { background: var(--warning); }
+    .elevation .stride-icon { background: var(--primary); }
+    .stride-name { font-size: 0.75rem; font-weight: 600; margin-bottom: 0.15rem; }
+    .stride-count { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+    .stride-desc { font-size: 0.65rem; color: var(--text-light); }
+    .stride-detail { margin-bottom: 0.75rem; }
+    .stride-detail summary { font-size: 0.9rem; }
+    .stride-threat {
+      background: var(--bg-secondary); border-radius: var(--radius);
+      padding: 0.75rem 1rem; margin-bottom: 0.5rem;
+      border-left: 3px solid var(--border);
+    }
+    .stride-threat .threat-asset { font-size: 0.8rem; color: var(--text-light); margin-bottom: 0.25rem; }
+    .stride-threat .threat-title { font-weight: 600; font-size: 0.9rem; }
+    .stride-threat .threat-controls {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem;
+    }
+    .countermeasure-badge {
+      display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px;
+      font-size: 0.65rem; font-weight: 600; letter-spacing: 0.03em;
+      background: rgba(153,71,235,0.08); color: var(--primary);
+      border: 1px solid rgba(153,71,235,0.2);
+    }
+    @media (max-width: 768px) {
+      .stride-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .stride-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+    thead th {
+      background: var(--primary); color: #ffffff;
+      padding: 0.65rem 0.75rem; text-align: left;
+      font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    tbody td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border-light); }
+    tbody tr:nth-child(even) { background: var(--bg-secondary); }
+    tbody tr:hover { background: var(--card-hover); }
+
+    /* Risk score ring */
+    .risk-score-container {
+      display: flex; align-items: center; justify-content: center;
+      gap: 3rem; padding: 2rem;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 1.5rem;
+    }
+    .score-ring { position: relative; width: 180px; height: 180px; }
+    .score-ring svg { transform: rotate(-90deg); }
+    .score-ring circle { fill: none; stroke-width: 12; }
+    .score-ring .bg { stroke: var(--border); }
+    .score-ring .progress { stroke-linecap: round; transition: stroke-dashoffset 0.5s ease; }
+    .score-ring .value {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); text-align: center;
+    }
+    .score-ring .percentage { font-size: 2.5rem; font-weight: 700; }
+    .score-ring .label { color: var(--text-light); font-size: 0.875rem; }
+    .score-info-tip {
+      text-align: center; margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-light);
+    }
+    .score-info-tip summary {
+      cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem;
+      font-weight: 500; color: var(--text-light); user-select: none;
+    }
+    .score-info-tip summary:hover { color: var(--text); }
+    .score-info-tip .tip-content {
+      margin-top: 0.5rem; padding: 0.75rem 1rem; background: var(--bg-secondary);
+      border: 1px solid var(--border); border-radius: var(--radius); text-align: left;
+      display: inline-block; max-width: 520px;
+    }
+    .score-info-tip .tip-content code {
+      background: var(--border-light); padding: 0.15rem 0.35rem; border-radius: 3px; font-size: 0.78rem;
+    }
+    .score-info-tip .tip-content table { margin-top: 0.5rem; font-size: 0.78rem; }
+    .score-info-tip .tip-content td { padding: 0.2rem 0.6rem; }
+
+    /* Severity cards */
+    .severity-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+    .severity-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.5rem; text-align: center;
+      box-shadow: var(--shadow-sm);
+    }
+    .severity-card .count { font-size: 2.5rem; font-weight: 700; }
+    .severity-card .label { color: var(--text-light); font-size: 0.8rem; margin-top: 0.25rem; }
+    .severity-card.critical .count { color: var(--critical); }
+    .severity-card.high .count { color: var(--high); }
+    .severity-card.medium .count { color: var(--medium); }
+    .severity-card.low .count { color: var(--low); }
+
+    /* Scan status cards */
+    .scan-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.75rem; margin-bottom: 1rem;
+    }
+    .scan-card {
+      background: var(--bg-secondary); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1rem; text-align: center;
+    }
+    .scan-card .icon { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .scan-card .name { font-size: 0.8rem; font-weight: 600; }
+    .scan-card .status { font-size: 0.75rem; margin-top: 0.25rem; }
+    .scan-card.passed .status { color: var(--success); }
+    .scan-card.failed .status { color: var(--danger); }
+    .scan-card.skipped .status { color: var(--text-light); }
+
+    /* Finding cards */
+    .finding {
+      background: var(--bg-secondary); border-radius: var(--radius);
+      padding: 1rem; margin-bottom: 0.75rem;
+      border-left: 4px solid var(--border);
+    }
+    .finding.critical { border-left-color: var(--critical); }
+    .finding.high { border-left-color: var(--high); }
+    .finding.medium { border-left-color: var(--medium); }
+    .finding.low { border-left-color: var(--low); }
+    .finding-header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 0.5rem;
+    }
+    .finding-title { font-weight: 600; }
+    .finding-location {
+      font-family: 'SF Mono', 'Fira Code', Menlo, monospace; font-size: 0.75rem;
+      background: var(--border-light); padding: 0.25rem 0.5rem;
+      border-radius: 4px; margin: 0.5rem 0;
+      border: 1px solid var(--border);
+    }
+
+    /* Severity badges */
+    .severity { padding: 0.2rem 0.65rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+    .severity-critical { background: rgba(220,53,69,0.12); color: var(--critical); }
+    .severity-high { background: rgba(192,86,33,0.12); color: var(--high); }
+    .severity-medium { background: rgba(207,148,12,0.12); color: var(--medium); }
+    .severity-low { background: rgba(0,170,132,0.12); color: var(--low); }
+
+    /* Pre-commit mode */
+    .diff-summary {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;
+    }
+    .diff-summary-card {
+      border-radius: var(--radius); padding: 1.5rem; text-align: center;
+      box-shadow: var(--shadow-sm);
+    }
+    .diff-summary-card.new-card {
+      background: var(--bg-secondary); border: 2px solid var(--danger);
+    }
+    .diff-summary-card.existing-card {
+      background: var(--bg-secondary); border: 2px solid var(--border);
+    }
+    .diff-summary-card .diff-count { font-size: 3rem; font-weight: 700; }
+    .diff-summary-card.new-card .diff-count { color: var(--critical); }
+    .diff-summary-card.existing-card .diff-count { color: var(--text-light); }
+    .diff-summary-card .diff-label { font-size: 0.85rem; font-weight: 600; margin-top: 0.25rem; }
+    .diff-summary-card .diff-breakdown {
+      font-size: 0.8rem; color: var(--text-light); margin-top: 0.5rem;
+    }
+    .new-badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+      background: rgba(220,53,69,0.12); color: var(--critical);
+      border: 1px solid var(--danger); margin-left: 0.5rem;
+    }
+    .existing-badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+      background: var(--border-light); color: var(--text-light);
+      border: 1px solid var(--border); margin-left: 0.5rem;
+    }
+    .diff-section-header {
+      font-size: 1.1rem; font-weight: 700; padding: 0.75rem 1rem;
+      border-radius: var(--radius); margin-bottom: 1rem;
+    }
+    .diff-section-header.new-header {
+      background: rgba(220,53,69,0.08); color: var(--critical);
+      border-left: 4px solid var(--danger);
+    }
+    .diff-section-header.existing-header {
+      background: var(--bg-secondary); color: var(--text-light);
+      border-left: 4px solid var(--border);
+    }
+    .changed-indicator { font-size: 0.75rem; color: var(--danger); font-weight: 600; margin-left: 0.5rem; }
+    .fix-before-commit {
+      border: 2px solid var(--danger); border-radius: var(--radius); padding: 1.5rem;
+      margin: 1rem 0; background: var(--bg-secondary);
+    }
+    .fix-before-commit h4 { color: var(--critical); margin-top: 0; }
+    .no-new-issues {
+      background: rgba(0,170,132,0.08); border: 2px solid var(--success);
+      border-radius: var(--radius); padding: 1.5rem; text-align: center;
+      font-size: 1.1rem; color: var(--success);
+    }
+
+    /* Category and CVE badges */
+    .category-badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em;
+      background: rgba(153,71,235,0.08); color: var(--primary);
+      border: 1px solid rgba(153,71,235,0.2);
+    }
+    .cve-badge {
+      font-family: 'SF Mono', 'Fira Code', Menlo, monospace; font-size: 0.75rem;
+      background: rgba(220,53,69,0.08); color: var(--critical);
+      padding: 0.15rem 0.5rem; border-radius: 4px;
+      border: 1px solid rgba(220,53,69,0.2);
+    }
+
+    /* Remediation box */
+    .remediation-box {
+      background: rgba(0,170,132,0.06); border: 1px solid rgba(0,170,132,0.2);
+      border-radius: var(--radius); padding: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem;
+    }
+    .remediation-box strong { color: var(--success); }
+
+    /* Sprint card */
+    .sprint-card {
+      border: 2px solid var(--success); border-radius: var(--radius); padding: 1.5rem;
+      margin: 1rem 0; background: var(--bg-secondary);
+    }
+    .sprint-card h4 { color: var(--success); margin-top: 0; }
+    .sprint-card .sprint-meta {
+      font-size: 0.85rem; color: var(--text-light); margin-bottom: 1rem;
+      padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-light);
+    }
+    .sprint-card .pr-description {
+      background: var(--code-bg); color: var(--code-text); padding: 1rem; border-radius: var(--radius);
+      font-family: 'SF Mono', 'Fira Code', Menlo, monospace; font-size: 0.8rem;
+      white-space: pre-wrap; margin-top: 1rem;
+    }
+
+    /* Inaction / Decision */
+    .inaction-cost {
+      background: var(--bg-secondary); border-left: 3px solid var(--danger); padding: 0.75rem 1rem;
+      margin: 0.5rem 0; border-radius: 0 var(--radius) var(--radius) 0; font-size: 0.9rem;
+    }
+    .inaction-cost strong { color: var(--danger); }
+    .decision-card {
+      border: 2px solid var(--primary); border-radius: var(--radius); padding: 1.5rem;
+      margin: 1rem 0; background: var(--bg-secondary);
+    }
+    .decision-card h4 { color: var(--primary); margin-top: 0; }
+    .option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+    .option-card {
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem;
+      background: var(--card);
+    }
+    .option-card h5 { font-size: 0.9rem; margin-bottom: 0.5rem; }
+
+    /* Collapsible */
+    details { margin: 0.5rem 0; border: 1px solid var(--border-light); border-radius: var(--radius); }
+    details summary {
+      cursor: pointer; font-weight: 600; font-size: 0.95rem; padding: 0.65rem 1rem;
+      background: var(--bg-secondary); border-radius: var(--radius); list-style: none;
+    }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::before { content: "\25B6\FE0E  "; font-size: 0.7rem; margin-right: 0.4rem; }
+    details[open] summary::before { content: "\25BC\FE0E  "; }
+    details[open] summary { border-bottom: 1px solid var(--border-light); border-radius: var(--radius) var(--radius) 0 0; }
+    details > div, details > p, details > ul, details > table { padding: 1rem; }
+
+    /* Code */
+    code {
+      background: var(--border-light); padding: 0.15rem 0.4rem; border-radius: 4px;
+      font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace; font-size: 0.85em;
+    }
+    pre {
+      background: var(--code-bg); color: var(--code-text); padding: 1rem 1.25rem;
+      border-radius: var(--radius); overflow-x: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+      font-size: 0.85rem; line-height: 1.5;
+    }
+    pre:not(.mermaid) { border: 1px solid var(--border); }
+    .mermaid { background: var(--card) !important; }
+    .mermaid svg { background: var(--card) !important; }
+
+    /* Footer */
+    .footer {
+      text-align: center; padding: 2rem 1rem; color: var(--text-light);
+      font-size: 0.8rem; border-top: 1px solid var(--border); margin-top: 1rem;
+    }
+    .footer-logo { margin-bottom: 0.5rem; }
+    .footer-logo img { height: 24px; width: auto; }
+    .footer-logo .logo-light { display: inline; }
+    .footer-logo .logo-dark { display: none; }
+    [data-theme="dark"] .footer-logo .logo-light { display: none; }
+    [data-theme="dark"] .footer-logo .logo-dark { display: inline; }
+
+    @media print {
+      .sidebar, .sidebar-toggle, .sidebar-overlay { display: none !important; }
+      .page-wrapper { display: block !important; }
+      body { background: white; }
+      .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .section { break-inside: avoid; box-shadow: none; }
+      .no-print { display: none !important; }
+    }
+    @media (max-width: 900px) {
+      .sidebar { position: fixed; top: 0; left: 0; height: 100vh; transform: translateX(-100%); box-shadow: var(--shadow-md); }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-toggle { display: flex; }
+      .sidebar-overlay.open { display: block; }
+      .page-wrapper { display: block; }
+      .container { padding: 1rem; }
+      .section { padding: 1.25rem; }
+      .option-grid { grid-template-columns: 1fr; }
+      .severity-grid { grid-template-columns: repeat(2, 1fr); }
+      .diff-summary { grid-template-columns: 1fr; }
+      table { font-size: 0.8rem; }
+      h1 { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header (full-width, above sidebar) -->
+  <div class="header">
+    <div class="header-content">
+      <div class="header-logo">
+        <img src="https://agent.opsera.ai/opsera_logo_white_horizontal.png" alt="Opsera">
+      </div>
+      <div class="header-text">
+        <h1>Security Scan Report</h1>
+        <div class="meta">[Project] | Scan: [Scan Type] | Severity: [Threshold] | [Date] | Opsera DevOps Agent</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile toggle -->
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle navigation">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+    </svg>
+  </button>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <div class="page-wrapper">
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-nav" id="sidebarNav">
+        <a class="sidebar-link" href="#executive-summary">Executive Summary</a>
+        <a class="sidebar-link" href="#risk-score">Risk Score &amp; Severity</a>
+        <a class="sidebar-link" href="#scan-coverage">Scan Coverage</a>
+        <a class="sidebar-link" href="#stride-analysis">STRIDE Threat Analysis</a>
+
+        <div class="sidebar-group-label">Findings</div>
+        <a class="sidebar-link sub" href="#findings-secrets">Secrets Detection</a>
+        <a class="sidebar-link sub" href="#findings-dependencies">Dependencies</a>
+        <a class="sidebar-link sub" href="#findings-sast">Static Analysis (SAST)</a>
+        <a class="sidebar-link sub" href="#findings-iac">Infrastructure as Code</a>
+        <a class="sidebar-link sub" href="#findings-container">Container &amp; Dockerfile</a>
+        <a class="sidebar-link sub" href="#findings-package-leakage">Package Leakage</a>
+        <a class="sidebar-link sub" href="#findings-sonarqube">SonarQube</a>
+
+        <div class="sidebar-group-label">Remediation Roadmap</div>
+        <a class="sidebar-link sub" href="#quick-wins">Quick Wins</a>
+        <a class="sidebar-link sub" href="#fix-this-sprint">Fix This Sprint</a>
+        <a class="sidebar-link sub" href="#plan-next-quarter">Plan Next Quarter</a>
+      </div>
+      <div class="sidebar-footer">
+        <button class="sidebar-theme-btn" onclick="toggleTheme()" aria-label="Toggle theme">
+          <svg class="sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.66-13.66l-.71.71M4.05 19.95l-.71.71M21 12h-1M4 12H3m16.66 7.66l-.71-.71M4.05 4.05l-.71-.71M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <svg class="moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.005 9.005 0 0012 21a9.005 9.005 0 008.354-5.646z"/>
+          </svg>
+        </button>
+        <span class="sidebar-theme-label">Toggle theme</span>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="page-main">
+      <div class="container">
+
+      <!-- Executive Summary -->
+      <div class="section" id="executive-summary">
+        <h2>Executive Summary</h2>
+        <table>
+          <thead><tr><th>Category</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr></thead>
+          <tbody>
+            <!-- Populate with scan results by category -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Risk Score -->
+      <div class="section" id="risk-score">
+        <h2>Risk Score &amp; Severity Breakdown</h2>
+        <div class="risk-score-container">
+          <div class="score-ring">
+            <svg width="180" height="180">
+              <circle class="bg" cx="90" cy="90" r="78"/>
+              <circle class="progress" cx="90" cy="90" r="78"
+                      stroke="[score_color]"
+                      stroke-dasharray="[circumference]"
+                      stroke-dashoffset="[dash_offset]"/>
+            </svg>
+            <div class="value">
+              <div class="percentage" style="color: [score_color];">[risk_score]</div>
+              <div class="label" style="color: [score_color]; font-weight: 600;">[score_label]</div>
+            </div>
+          </div>
+        </div>
+        <div class="severity-grid">
+          <div class="severity-card critical">
+            <div class="count">[critical_count]</div>
+            <div class="label">Critical</div>
+          </div>
+          <div class="severity-card high">
+            <div class="count">[high_count]</div>
+            <div class="label">High</div>
+          </div>
+          <div class="severity-card medium">
+            <div class="count">[medium_count]</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="severity-card low">
+            <div class="count">[low_count]</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+        <div class="score-info-tip">
+          <details>
+            <summary>&#9432; How is this score calculated?</summary>
+            <div class="tip-content">
+              <p style="margin:0 0 0.4rem;"><strong>Formula:</strong> <code>min(100, round(log&#8321;&#8320;(C&#215;100 + H&#215;30 + M&#215;10 + L&#215;3 + 1) &#215; 25))</code></p>
+              <p style="margin:0 0 0.4rem;">Logarithmic scaling — the first critical finding has high impact, each additional one adds progressively less.</p>
+              <table>
+                <tr><td><strong>0</strong></td><td>No Risk</td></tr>
+                <tr><td><strong>1 – 25</strong></td><td>Low Risk</td></tr>
+                <tr><td><strong>26 – 50</strong></td><td>Moderate Risk</td></tr>
+                <tr><td><strong>51 – 75</strong></td><td>High Risk</td></tr>
+                <tr><td><strong>76 – 100</strong></td><td>Critical Risk</td></tr>
+              </table>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- Scan Coverage -->
+      <div class="section" id="scan-coverage">
+        <h2>Scan Coverage</h2>
+        <div class="scan-grid">
+          <div class="scan-card [status]"><div class="icon">🔑</div><div class="name">Secrets</div><div class="status">[status]</div></div>
+          <div class="scan-card [status]"><div class="icon">📦</div><div class="name">Dependencies</div><div class="status">[status]</div></div>
+          <div class="scan-card [status]"><div class="icon">🔍</div><div class="name">SAST</div><div class="status">[status]</div></div>
+          <div class="scan-card [status]"><div class="icon">🏗️</div><div class="name">IaC</div><div class="status">[status]</div></div>
+          <div class="scan-card [status]"><div class="icon">🐳</div><div class="name">Container</div><div class="status">[status]</div></div>
+          <div class="scan-card [status]"><div class="icon">📦</div><div class="name">Pkg Leakage</div><div class="status">[status]</div></div>
+          <div class="scan-card [status]"><div class="icon">📊</div><div class="name">SonarQube</div><div class="status">[status]</div></div>
+        </div>
+      </div>
+
+      <!-- STRIDE Threat Analysis -->
+      <div class="section" id="stride-analysis">
+        <h2>STRIDE Threat Analysis</h2>
+        <p style="font-size:0.9rem;color:var(--text-light);margin-bottom:1.25rem;">Scan findings classified by Microsoft's STRIDE threat categories.</p>
+        <div class="stride-grid">
+          <div class="stride-card spoofing">
+            <div class="stride-icon">S</div>
+            <div class="stride-name">Spoofing</div>
+            <div class="stride-count">[count]</div>
+            <div class="stride-desc">Authentication threats</div>
+          </div>
+          <div class="stride-card tampering">
+            <div class="stride-icon">T</div>
+            <div class="stride-name">Tampering</div>
+            <div class="stride-count">[count]</div>
+            <div class="stride-desc">Integrity threats</div>
+          </div>
+          <div class="stride-card repudiation">
+            <div class="stride-icon">R</div>
+            <div class="stride-name">Repudiation</div>
+            <div class="stride-count">[count]</div>
+            <div class="stride-desc">Non-repudiation threats</div>
+          </div>
+          <div class="stride-card info-disclosure">
+            <div class="stride-icon">I</div>
+            <div class="stride-name">Information Disclosure</div>
+            <div class="stride-count">[count]</div>
+            <div class="stride-desc">Confidentiality threats</div>
+          </div>
+          <div class="stride-card denial-of-service">
+            <div class="stride-icon">D</div>
+            <div class="stride-name">Denial of Service</div>
+            <div class="stride-count">[count]</div>
+            <div class="stride-desc">Availability threats</div>
+          </div>
+          <div class="stride-card elevation">
+            <div class="stride-icon">E</div>
+            <div class="stride-name">Elevation of Privilege</div>
+            <div class="stride-count">[count]</div>
+            <div class="stride-desc">Authorization threats</div>
+          </div>
+        </div>
+        <!-- Per-category threat details filled by LLM using stride-detail and stride-threat classes -->
+      </div>
+
+      <!-- PRE-COMMIT MODE SECTIONS (only populate when scan_mode is "pre-commit") -->
+      <div class="section" id="diff-summary" style="display:none;">
+        <h2>Pre-Commit Scan Summary</h2>
+        <p style="font-size:0.9rem;color:var(--text-light);margin-bottom:1rem;">
+          Full scan with classification: findings from your uncommitted changes vs already-committed code.
+        </p>
+        <div class="diff-summary">
+          <div class="diff-summary-card new-card">
+            <div class="diff-count">[new_count]</div>
+            <div class="diff-label">NEW Issues</div>
+            <div class="diff-breakdown">From your uncommitted changes</div>
+            <div class="diff-breakdown">[new_critical] Critical · [new_high] High · [new_medium] Medium · [new_low] Low</div>
+          </div>
+          <div class="diff-summary-card existing-card">
+            <div class="diff-count">[existing_count]</div>
+            <div class="diff-label">EXISTING Issues</div>
+            <div class="diff-breakdown">Already in committed code</div>
+            <div class="diff-breakdown">[existing_critical] Critical · [existing_high] High · [existing_medium] Medium · [existing_low] Low</div>
+          </div>
+        </div>
+        <p style="font-size:0.85rem;color:var(--text-light);text-align:center;">
+          Changed files: [changed_files_count] · Changed lines: [changed_lines_count]
+        </p>
+      </div>
+
+      <!--
+      <div class="no-new-issues" id="no-new-issues">
+        No new security issues introduced by your changes!<br>
+        All [total] findings are pre-existing in the committed codebase.
+      </div>
+      -->
+
+      <div class="section" id="findings-new" style="display:none;">
+        <h2>New Issues — Introduced by Your Changes</h2>
+        <div class="diff-section-header new-header">
+          These [new_count] issues were introduced by your uncommitted changes. Fix before committing.
+        </div>
+        <div class="finding critical">
+          <div class="finding-header">
+            <span class="finding-title">[Finding Title]<span class="new-badge">NEW</span></span>
+            <span class="severity severity-critical">Critical</span>
+          </div>
+          <div class="finding-location">[file]:[line] <span class="changed-indicator">← changed in your diff</span></div>
+          <p>[Description]</p>
+          <div class="remediation-box"><strong>Fix:</strong> [remediation]</div>
+        </div>
+      </div>
+
+      <div class="section" id="findings-existing" style="display:none;">
+        <h2>Existing Issues — Already in Committed Code</h2>
+        <div class="diff-section-header existing-header">
+          These [existing_count] issues were already present in the committed codebase.
+        </div>
+        <div class="finding high">
+          <div class="finding-header">
+            <span class="finding-title">[Finding Title]<span class="existing-badge">EXISTING</span></span>
+            <span class="severity severity-high">High</span>
+          </div>
+          <div class="finding-location">[file]:[line]</div>
+          <p>[Description]</p>
+          <div class="remediation-box"><strong>Fix:</strong> [remediation]</div>
+        </div>
+      </div>
+
+      <!-- STANDARD MODE SECTIONS -->
+      <div class="section" id="findings-secrets">
+        <h2>Secrets Detection</h2>
+        <div class="finding critical">
+          <div class="finding-header">
+            <span class="finding-title">[Finding Title]</span>
+            <span class="severity severity-critical">Critical</span>
+          </div>
+          <div class="finding-location">[file]:[line]</div>
+          <p>[Description — mask any secret values with ****]</p>
+          <div class="remediation-box"><strong>Fix:</strong> [remediation]</div>
+        </div>
+      </div>
+
+      <div class="section" id="findings-dependencies">
+        <h2>Dependency Vulnerabilities</h2>
+        <div class="finding high">
+          <div class="finding-header">
+            <span class="finding-title">[Package]@[Version]</span>
+            <span class="severity severity-high">High</span>
+          </div>
+          <span class="cve-badge">[CVE-XXXX-XXXXX]</span>
+          <p>[Description]</p>
+          <div class="remediation-box"><strong>Fix:</strong> <code>[npm install package@version]</code></div>
+        </div>
+      </div>
+
+      <div class="section" id="findings-sast"><h2>Static Analysis (SAST)</h2></div>
+      <div class="section" id="findings-iac"><h2>Infrastructure as Code</h2></div>
+      <div class="section" id="findings-container"><h2>Container &amp; Dockerfile</h2></div>
+
+      <div class="section" id="findings-package-leakage">
+        <h2>Package Source Leakage</h2>
+        <p style="font-size:0.9rem;color:var(--text-light);margin-bottom:1rem;">Checks whether publishable packages properly exclude source code, source maps, and sensitive files from their build artifacts.</p>
+        <div class="finding [severity]">
+          <div class="finding-header">
+            <span class="finding-title">[Title]</span>
+            <span class="severity severity-[severity]">[Severity]</span>
+          </div>
+          <span class="cve-badge">[Ecosystem]</span>
+          <p>[Description]</p>
+          <div class="remediation"><strong>File:</strong> <code>[file]</code></div>
+          <div class="remediation"><strong>Remediation:</strong> [remediation]</div>
+        </div>
+      </div>
+
+      <div class="section" id="findings-sonarqube"><h2>SonarQube Quality Gate</h2></div>
+
+      <!-- Remediation Roadmap -->
+      <div class="act-divider" id="remediation-roadmap">Remediation Roadmap</div>
+
+      <div class="section" id="fix-before-commit" style="display:none;">
+        <h2>Fix Before Committing</h2>
+        <div class="fix-before-commit">
+          <h4>These new issues must be resolved before committing your changes</h4>
+          <table>
+            <thead><tr><th>#</th><th>Severity</th><th>Finding</th><th>Location</th><th>Action</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section" id="existing-tech-debt" style="display:none;">
+        <h2>Existing Tech Debt</h2>
+        <p style="font-size:0.9rem;color:var(--text-light);">These issues are already in the committed codebase and should be addressed separately.</p>
+        <table>
+          <thead><tr><th>Priority</th><th>Finding</th><th>Location</th><th>Action</th><th>Effort</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section" id="quick-wins">
+        <h2>Quick Wins — Fix Today</h2>
+        <div class="sprint-card">
+          <h4>Sprint: [N] fixes, ~[M] minutes total</h4>
+          <div class="sprint-meta">These changes can be made in a single PR. Total estimated time: [M] minutes.</div>
+          <pre>--- a/path/to/file
++++ b/path/to/file
+ context
+-old
++new</pre>
+          <div class="pr-description">fix(security): [title]
+
+[body summarizing what was fixed and why]</div>
+        </div>
+      </div>
+
+      <div class="section" id="fix-this-sprint">
+        <h2>Fix This Sprint</h2>
+        <table>
+          <thead><tr><th>Priority</th><th>Finding</th><th>Action</th><th>Effort</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section" id="plan-next-quarter">
+        <h2>Plan For Next Quarter</h2>
+        <table>
+          <thead><tr><th>Priority</th><th>Finding</th><th>Action</th><th>Effort</th><th>Prerequisites</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="footer-logo">
+        <img class="logo-light" src="https://agent.opsera.ai/opsera_logo_transparent.png" alt="Opsera">
+        <img class="logo-dark" src="https://agent.opsera.ai/opsera_logo_white_horizontal.png" alt="Opsera">
+      </div>
+      Generated by Opsera DevOps Agent | Security Scan
+    </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      var html = document.documentElement;
+      var current = html.getAttribute('data-theme');
+      var next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      try { localStorage.setItem('opsera-report-theme', next); } catch(e) {}
+    }
+    (function() {
+      try {
+        var saved = localStorage.getItem('opsera-report-theme');
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+      } catch(e) {}
+    })();
+    mermaid.initialize({
+      startOnLoad: true, theme: 'neutral', securityLevel: 'loose',
+      flowchart: { useMaxWidth: false, htmlLabels: true, curve: 'basis', padding: 20 },
+      sequence: { useMaxWidth: false, actorMargin: 80, messageFontSize: 14 },
+      themeVariables: {
+        background: '#ffffff', primaryColor: '#ede5f7', primaryTextColor: '#3D3B36',
+        primaryBorderColor: '#9947EB', lineColor: '#67788d', textColor: '#3D3B36',
+        mainBkg: '#ffffff', nodeBorder: '#9947EB', clusterBkg: '#F3F3F1', clusterBorder: '#E6E5E3',
+        actorBkg: '#ede5f7', actorBorder: '#9947EB', actorTextColor: '#3D3B36',
+        signalColor: '#67788d', signalTextColor: '#3D3B36',
+        noteBkgColor: '#fdf4e0', noteTextColor: '#3D3B36', noteBorderColor: '#CF940C'
+      }
+    });
+    document.addEventListener('DOMContentLoaded', function() {
+      // Sidebar: active section tracking
+      var links = document.querySelectorAll('.sidebar-link[href^="#"]');
+      var sections = [];
+      links.forEach(function(link) {
+        var id = link.getAttribute('href').slice(1);
+        var el = document.getElementById(id);
+        if (el) sections.push({ id: id, el: el, link: link });
+      });
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            links.forEach(function(l) { l.classList.remove('active'); });
+            var match = sections.find(function(s) { return s.el === entry.target; });
+            if (match) {
+              match.link.classList.add('active');
+              match.link.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          }
+        });
+      }, { rootMargin: '-10% 0px -80% 0px', threshold: 0 });
+      sections.forEach(function(s) { observer.observe(s.el); });
+
+      // Mobile sidebar toggle
+      var sidebar = document.getElementById('sidebar');
+      var toggle = document.getElementById('sidebarToggle');
+      var overlay = document.getElementById('sidebarOverlay');
+      function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('open'); }
+      toggle.addEventListener('click', function() {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('open');
+      });
+      overlay.addEventListener('click', closeSidebar);
+      links.forEach(function(link) {
+        link.addEventListener('click', function() {
+          if (window.innerWidth <= 900) closeSidebar();
+        });
+      });
+    });
+  </script>
+</body>
+</html>

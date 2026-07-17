@@ -1,4 +1,8 @@
-"""Audit logging service."""
+"""Audit logging utility — in-process logger with optional Kafka publishing.
+
+Uses ``actor_id`` consistently to match the database column and API contract,
+eliminating the ``user_id`` / ``actor_id`` semantic split.
+"""
 from __future__ import annotations
 
 import functools
@@ -12,7 +16,7 @@ from typing import Any, Callable, Awaitable
 class AuditLogEntry:
     id: str
     action: str
-    user_id: str
+    actor_id: str           # canonical name — matches DB column and AuditLogResponse
     resource_id: str
     metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -30,11 +34,17 @@ class AuditLogger:
         self._store = store if store is not None else []
         self._publish = publish
 
-    async def log(self, action: str, user_id: str, resource_id: str, metadata: dict | None = None) -> AuditLogEntry:
+    async def log(
+        self,
+        action: str,
+        actor_id: str,
+        resource_id: str,
+        metadata: dict | None = None,
+    ) -> AuditLogEntry:
         entry = AuditLogEntry(
             id=str(uuid.uuid4()),
             action=action,
-            user_id=user_id,
+            actor_id=actor_id,
             resource_id=resource_id,
             metadata=metadata or {},
         )
@@ -42,7 +52,7 @@ class AuditLogger:
         if self._publish:
             await self._publish("audit-events", {
                 "action": action,
-                "user_id": user_id,
+                "actor_id": actor_id,
                 "resource_id": resource_id,
                 "metadata": metadata or {},
             })
@@ -58,9 +68,9 @@ def audit_action(action: str) -> Callable:
             result = await func(*args, **kwargs)
             logger: AuditLogger | None = kwargs.get("audit_logger")
             if logger:
-                user_id = kwargs.get("user_id", "system")
+                actor_id = kwargs.get("actor_id", kwargs.get("user_id", "system"))
                 resource_id = kwargs.get("resource_id", "")
-                await logger.log(action, user_id, resource_id)
+                await logger.log(action, actor_id, resource_id)
             return result
         return wrapper
     return decorator

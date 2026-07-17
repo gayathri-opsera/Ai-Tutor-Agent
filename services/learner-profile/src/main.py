@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src.api.profile import router
 from src.service import LearnerProfileService, DB_DSN
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Learner Profile Service", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(router)
 
 

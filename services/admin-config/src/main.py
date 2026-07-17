@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src.api.admin_users import router as admin_users_router
 from src.api.data_subject import router as data_subject_router
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Admin Configuration Service", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(config_router)
 app.include_router(auth_router)
 app.include_router(admin_users_router)

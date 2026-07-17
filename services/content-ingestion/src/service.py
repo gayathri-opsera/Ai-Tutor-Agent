@@ -25,10 +25,10 @@ DATABASE_URL: str = os.getenv(
 )
 RAG_SERVICE_URL: str = os.getenv("RAG_SERVICE_URL", "http://rag-pipeline:8002")
 
-# MinIO / S3 settings — used to store raw media files so learners can play them back
+# MinIO / S3 settings — local-dev defaults; set S3_ACCESS_KEY and S3_SECRET_KEY in production.
 S3_ENDPOINT  = os.getenv("S3_ENDPOINT",  "http://minio:9000")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")  # local-dev only — override via secret manager
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")  # local-dev only — override via secret manager
 S3_BUCKET    = os.getenv("S3_BUCKET",    "ai-tutor-content")
 
 
@@ -85,7 +85,7 @@ class DocumentStatus(str, Enum):
     UPLOADING = "uploading"
     PROCESSING = "processing"
     ACTIVE = "active"
-    ERROR = "failed"          # maps to "failed" in document_status_enum
+    FAILED = "failed"              # enum name now matches the serialised value
     PENDING_REVIEW = "pending_review"   # low-quality transcription awaiting creator approval
 
 
@@ -234,7 +234,7 @@ class ContentIngestionService:
                     )
             except Exception as exc:
                 logger.error("Transcription failed for %s: %s", filename, exc)
-                initial_status = DocumentStatus.ERROR
+                initial_status = DocumentStatus.FAILED
                 extracted_text = ""
         else:
             extracted_text = _extract_text(filename, content_type, file_bytes)
@@ -245,7 +245,7 @@ class ContentIngestionService:
         # "error" is not a valid document_status_enum value — use "failed" instead
         db_status = (
             "pending_review" if initial_status == DocumentStatus.PENDING_REVIEW
-            else ("failed" if initial_status == DocumentStatus.ERROR else "active")
+            else ("failed" if initial_status == DocumentStatus.FAILED else "active")
         )
         async with self._pool.acquire() as conn:
             await conn.execute(
@@ -475,5 +475,5 @@ class ContentIngestionService:
     async def mark_error(self, doc_id: str, error: str) -> None:
         rec = self._store.get(doc_id)
         if rec:
-            rec.status = DocumentStatus.ERROR
+            rec.status = DocumentStatus.FAILED
             rec.error = error
