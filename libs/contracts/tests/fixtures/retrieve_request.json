@@ -1,0 +1,7 @@
+{
+  "query": "What is gradient descent in machine learning?",
+  "knowledge_base_id": "kb-ml-fundamentals-2024",
+  "top_k": 5,
+  "filters": null,
+  "use_hybrid": true
+}

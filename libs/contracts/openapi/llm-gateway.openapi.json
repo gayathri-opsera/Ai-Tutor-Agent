@@ -1,0 +1,429 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LLM Gateway",
+    "description": "Provider-agnostic LLM inference gateway with circuit breaker, PII scrubbing, SSE streaming, and Kafka usage telemetry. Implements ADR-001.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/internal/llm/completions": {
+      "post": {
+        "tags": [
+          "llm-gateway"
+        ],
+        "summary": "Completions",
+        "description": "Non-streaming LLM completion.\n\nAccepts a provider-agnostic request and returns a unified response.\nThe circuit breaker transparently routes to the fallback provider on\nprimary failure.",
+        "operationId": "completions_api_internal_llm_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompletionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/llm/completions/stream": {
+      "post": {
+        "tags": [
+          "llm-gateway"
+        ],
+        "summary": "Completions Stream",
+        "description": "SSE token-by-token streaming completion.\n\nEach Server-Sent Event carries a JSON-encoded `StreamChunk`.\nThe final chunk includes `usage` and `estimated_cost_usd`.",
+        "operationId": "completions_stream_api_internal_llm_completions_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/llm/embed": {
+      "post": {
+        "tags": [
+          "llm-gateway"
+        ],
+        "summary": "Embed",
+        "description": "Generate embeddings \u2014 always uses OpenAI (Anthropic has no embedding API).",
+        "operationId": "embed_api_internal_llm_embed_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Embed Api Internal Llm Embed Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/llm/health": {
+      "get": {
+        "tags": [
+          "llm-gateway"
+        ],
+        "summary": "Health",
+        "description": "Lightweight liveness + circuit-breaker state probe.",
+        "operationId": "health_api_internal_llm_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Health Api Internal Llm Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CompletionChoice": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "default": 0
+          },
+          "message_role": {
+            "type": "string",
+            "title": "Message Role",
+            "default": "assistant"
+          },
+          "message_content": {
+            "type": "string",
+            "title": "Message Content"
+          },
+          "finish_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finish Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_content"
+        ],
+        "title": "CompletionChoice"
+      },
+      "CompletionRequest": {
+        "properties": {
+          "model_tier": {
+            "$ref": "#/components/schemas/ModelTier",
+            "description": "Abstract capability tier; gateway maps to concrete model.",
+            "default": "standard"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Messages"
+          },
+          "temperature": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "default": 0.7
+          },
+          "max_tokens": {
+            "type": "integer",
+            "maximum": 32768.0,
+            "minimum": 1.0,
+            "title": "Max Tokens",
+            "default": 1024
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id",
+            "description": "Caller-supplied idempotency / trace ID."
+          },
+          "provider_override": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "azure",
+                  "ollama"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Override"
+          },
+          "extra": {
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "CompletionRequest",
+        "description": "Unified, provider-agnostic completion request (ADR-001)."
+      },
+      "CompletionResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_used": {
+            "type": "string",
+            "title": "Model Used"
+          },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/CompletionChoice"
+            },
+            "type": "array",
+            "title": "Choices"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageStats"
+          },
+          "estimated_cost_usd": {
+            "type": "number",
+            "title": "Estimated Cost Usd",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "provider",
+          "model_used",
+          "choices"
+        ],
+        "title": "CompletionResponse",
+        "description": "Unified response returned to all callers regardless of upstream provider."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Message": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/MessageRole"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "Message"
+      },
+      "MessageRole": {
+        "type": "string",
+        "enum": [
+          "system",
+          "user",
+          "assistant"
+        ],
+        "title": "MessageRole"
+      },
+      "ModelTier": {
+        "type": "string",
+        "enum": [
+          "small",
+          "standard",
+          "large",
+          "embedding"
+        ],
+        "title": "ModelTier",
+        "description": "Abstract model capability tiers \u2014 decoupled from vendor model names."
+      },
+      "UsageStats": {
+        "properties": {
+          "token_count_input": {
+            "type": "integer",
+            "title": "Token Count Input",
+            "default": 0
+          },
+          "token_count_output": {
+            "type": "integer",
+            "title": "Token Count Output",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "UsageStats"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

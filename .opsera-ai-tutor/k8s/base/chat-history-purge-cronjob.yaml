@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: chat-history-purge
+  labels:
+    app: chat-history-purge
+    component: maintenance
+spec:
+  # Runs every night at 02:00 UTC
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: chat-history-purge
+        spec:
+          serviceAccountName: ai-tutor-sa
+          restartPolicy: OnFailure
+          containers:
+            - name: purge
+              image: python:3.12-slim
+              command:
+                - python
+                - /scripts/purge_chat_history.py
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ai-tutor-secrets
+                      key: DATABASE_URL
+                - name: KAFKA_BOOTSTRAP_SERVERS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: ai-tutor-config
+                      key: KAFKA_BOOTSTRAP_SERVERS
+                - name: RETENTION_DAYS
+                  value: "7"
+              volumeMounts:
+                - name: purge-script
+                  mountPath: /scripts
+          volumes:
+            - name: purge-script
+              configMap:
+                name: chat-history-purge-script
+                defaultMode: 0755

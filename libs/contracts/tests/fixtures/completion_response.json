@@ -1,0 +1,19 @@
+{
+  "request_id": "req-fixture-001",
+  "provider": "openai",
+  "model_used": "gpt-4o",
+  "choices": [
+    {
+      "index": 0,
+      "message_role": "assistant",
+      "message_content": "Supervised learning is a machine learning paradigm where the model learns from labelled training data.",
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "token_count_input": 42,
+    "token_count_output": 38,
+    "total_tokens": 80
+  },
+  "estimated_cost_usd": 0.00024
+}

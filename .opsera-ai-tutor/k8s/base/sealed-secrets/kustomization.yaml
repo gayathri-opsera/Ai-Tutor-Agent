@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Sealed Secrets controller — deployed via Helm chart.
+# Chart: sealed-secrets | Repo: https://bitnami-labs.github.io/sealed-secrets
+# Controller version: v0.27.1 | Chart version: 2.16.2
+# Pinned to ensure reproducible installs across cluster bootstraps.
+#
+# To upgrade: update chartVersion below and run
+#   helm template sealed-secrets sealed-secrets/sealed-secrets \
+#     --namespace kube-system --version <new-version> \
+#     > controller.yaml
+# Then commit controller.yaml with the version bump.
+
+helmCharts:
+  - name: sealed-secrets
+    repo: https://bitnami-labs.github.io/sealed-secrets
+    version: 2.16.2
+    releaseName: sealed-secrets
+    namespace: kube-system
+    valuesFile: values.yaml

@@ -1,0 +1,188 @@
+{
+  "_comment": "Service dependency map for monorepo CI/CD matrix strategy (WO-019). Maps shared library paths to the services that depend on them, enabling transitive rebuild detection.",
+
+  "services": {
+    "admin-config": {
+      "service": "admin-config",
+      "port": "8009",
+      "ecr_repo": "opsera/ai-tutor-admin-config",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_ADMIN_CONFIG",
+      "dockerfile_pattern": "service",
+      "service_path": "services/admin-config",
+      "contract_service_name": "admin-config",
+      "source_paths": ["services/admin-config"]
+    },
+    "agent-reasoning": {
+      "service": "agent-reasoning",
+      "port": "8005",
+      "ecr_repo": "opsera/ai-tutor-agent-reasoning",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_AGENT_REASONING",
+      "dockerfile_pattern": "service",
+      "service_path": "services/agent-reasoning",
+      "contract_service_name": "agent-reasoning",
+      "source_paths": ["services/agent-reasoning"]
+    },
+    "analytics": {
+      "service": "analytics",
+      "port": "8011",
+      "ecr_repo": "opsera/ai-tutor-analytics",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_ANALYTICS",
+      "dockerfile_pattern": "service",
+      "service_path": "services/analytics",
+      "contract_service_name": "analytics",
+      "source_paths": ["services/analytics"]
+    },
+    "assessment": {
+      "service": "assessment",
+      "port": "8010",
+      "ecr_repo": "opsera/ai-tutor-assessment",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_ASSESSMENT",
+      "dockerfile_pattern": "service",
+      "service_path": "services/assessment",
+      "contract_service_name": "assessment",
+      "source_paths": ["services/assessment"]
+    },
+    "audit": {
+      "service": "audit",
+      "port": "8012",
+      "ecr_repo": "opsera/ai-tutor-audit",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_AUDIT",
+      "dockerfile_pattern": "service",
+      "service_path": "services/audit",
+      "contract_service_name": "audit",
+      "source_paths": ["services/audit"]
+    },
+    "chat-orchestrator": {
+      "service": "chat-orchestrator",
+      "port": "8004",
+      "ecr_repo": "opsera/ai-tutor-chat-orchestrator",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_CHAT_ORCHESTRATOR",
+      "dockerfile_pattern": "service",
+      "service_path": "services/chat-orchestrator",
+      "contract_service_name": "chat-orchestrator",
+      "source_paths": ["services/chat-orchestrator"]
+    },
+    "confidence-grader": {
+      "service": "confidence-grader",
+      "port": "8006",
+      "ecr_repo": "opsera/ai-tutor-confidence-grader",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_CONFIDENCE_GRADER",
+      "dockerfile_pattern": "service",
+      "service_path": "services/confidence-grader",
+      "contract_service_name": "confidence-grader",
+      "source_paths": ["services/confidence-grader"]
+    },
+    "content-ingestion": {
+      "service": "content-ingestion",
+      "port": "8003",
+      "ecr_repo": "opsera/ai-tutor-content-ingestion",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_CONTENT_INGESTION",
+      "dockerfile_pattern": "ingestion",
+      "service_path": "services/content-ingestion",
+      "contract_service_name": "content-ingestion",
+      "source_paths": ["services/content-ingestion"]
+    },
+    "content-management": {
+      "service": "content-management",
+      "port": "8007",
+      "ecr_repo": "opsera/ai-tutor-content-management",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_CONTENT_MANAGEMENT",
+      "dockerfile_pattern": "service",
+      "service_path": "services/content-management",
+      "contract_service_name": "content-management",
+      "source_paths": ["services/content-management"]
+    },
+    "embedding-service": {
+      "service": "embedding-service",
+      "port": "8002",
+      "ecr_repo": "opsera/ai-tutor-embedding-service",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE",
+      "dockerfile_pattern": "service",
+      "service_path": "services/embedding-service",
+      "contract_service_name": "embedding-service",
+      "source_paths": ["services/embedding-service"]
+    },
+    "frontend": {
+      "service": "frontend",
+      "port": "8000",
+      "ecr_repo": "opsera/ai-tutor-frontend",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_",
+      "dockerfile_pattern": "frontend",
+      "service_path": "frontend",
+      "contract_service_name": "",
+      "source_paths": ["frontend", ".opsera-ai-tutor/Dockerfile.frontend", ".opsera-ai-tutor/nginx.conf"]
+    },
+    "learner-profile": {
+      "service": "learner-profile",
+      "port": "8008",
+      "ecr_repo": "opsera/ai-tutor-learner-profile",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_LEARNER_PROFILE",
+      "dockerfile_pattern": "service",
+      "service_path": "services/learner-profile",
+      "contract_service_name": "learner-profile",
+      "source_paths": ["services/learner-profile"]
+    },
+    "llm-gateway": {
+      "service": "llm-gateway",
+      "port": "8001",
+      "ecr_repo": "opsera/ai-tutor-llm-gateway",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_LLM_GATEWAY",
+      "dockerfile_pattern": "service",
+      "service_path": "services/llm-gateway",
+      "contract_service_name": "llm-gateway",
+      "source_paths": ["services/llm-gateway"]
+    },
+    "rag-pipeline": {
+      "service": "rag-pipeline",
+      "port": "8003",
+      "ecr_repo": "opsera/ai-tutor-rag-pipeline",
+      "placeholder_key": "PLACEHOLDER_ECR_URI_RAG_PIPELINE",
+      "dockerfile_pattern": "service",
+      "service_path": "services/rag-pipeline",
+      "contract_service_name": "rag-pipeline",
+      "source_paths": ["services/rag-pipeline"]
+    }
+  },
+
+  "shared_path_triggers": {
+    "Dockerfile.service": [
+      "admin-config", "agent-reasoning", "analytics", "assessment", "audit",
+      "chat-orchestrator", "confidence-grader", "content-management",
+      "embedding-service", "learner-profile", "llm-gateway", "rag-pipeline"
+    ],
+    "Dockerfile.content-ingestion": ["content-ingestion"]
+  },
+
+  "library_dependencies": {
+    "libs/auth": [
+      "admin-config", "agent-reasoning", "analytics", "assessment", "audit",
+      "chat-orchestrator", "confidence-grader", "content-ingestion", "content-management",
+      "embedding-service", "learner-profile", "llm-gateway", "rag-pipeline"
+    ],
+    "libs/kafka": [
+      "analytics", "audit", "assessment", "content-ingestion",
+      "content-management", "chat-orchestrator"
+    ],
+    "libs/cache": [
+      "chat-orchestrator", "rag-pipeline", "embedding-service",
+      "learner-profile", "analytics", "llm-gateway"
+    ],
+    "libs/vector-db": [
+      "embedding-service", "rag-pipeline"
+    ],
+    "libs/metrics": [
+      "admin-config", "agent-reasoning", "analytics", "assessment", "audit",
+      "chat-orchestrator", "confidence-grader", "content-ingestion", "content-management",
+      "embedding-service", "learner-profile", "llm-gateway", "rag-pipeline"
+    ],
+    "libs/logging": [
+      "admin-config", "agent-reasoning", "analytics", "assessment", "audit",
+      "chat-orchestrator", "confidence-grader", "content-ingestion", "content-management",
+      "embedding-service", "frontend", "learner-profile", "llm-gateway", "rag-pipeline"
+    ],
+    "libs/contracts": [
+      "chat-orchestrator", "rag-pipeline", "embedding-service",
+      "llm-gateway", "confidence-grader", "agent-reasoning"
+    ]
+  }
+}

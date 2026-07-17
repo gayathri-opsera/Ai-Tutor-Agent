@@ -2,15 +2,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
+
+from agent import ReasonRequest  # noqa: F401 — re-export from libs/contracts (WO-015)
 
 router = APIRouter(prefix="/api/internal/agent", tags=["agent"])
-
-
-class ReasonRequest(BaseModel):
-    query: str
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-    knowledge_base_id: str | None = None
 
 
 @router.post("/reason")

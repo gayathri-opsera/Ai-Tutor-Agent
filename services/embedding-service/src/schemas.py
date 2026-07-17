@@ -1,19 +1,11 @@
-"""Request/response schemas for the Embedding Service."""
+"""Request/response schemas for the Embedding Service.
+
+Models migrated to libs/contracts/src/embedding.py (WO-014).
+Re-exported here for backward compatibility.
+"""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+# noqa: F401 — re-export for backward compatibility
+from embedding import EmbedRequest, EmbedResponse
 
-
-class EmbedRequest(BaseModel):
-    texts: list[str] = Field(..., min_length=1, description="Text chunks to embed.")
-    model: str | None = Field(
-        default=None,
-        description="Optional model override. Uses the configured default when omitted.",
-    )
-
-
-class EmbedResponse(BaseModel):
-    embeddings: list[list[float]]
-    model: str
-    dimensions: int
-    backend: str
+__all__ = ["EmbedRequest", "EmbedResponse"]

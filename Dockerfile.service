@@ -3,7 +3,7 @@
 ARG SERVICE=llm-gateway
 ARG PORT=8000
 
-FROM python:3.11-slim AS base
+FROM python:3.13-slim AS base
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,6 +20,7 @@ COPY libs/auth/src          /app/libs/auth/src
 COPY libs/cache/src         /app/libs/cache/src
 COPY libs/logging/src       /app/libs/logging/src
 COPY libs/metrics/src       /app/libs/metrics/src
+COPY libs/contracts/src     /app/libs/contracts/src
 
 # ── Service deps ─────────────────────────────────────────────────────────
 ARG SERVICE
@@ -30,7 +31,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY services/${SERVICE}/src /app/src
 
 # ── Python path includes all shared libs ────────────────────────────────
-ENV PYTHONPATH=/app:/app/libs/kafka/src:/app/libs/vector-db/src:/app/libs/auth/src:/app/libs/cache/src:/app/libs/logging/src:/app/libs/metrics/src
+ENV PYTHONPATH=/app:/app/libs/kafka/src:/app/libs/vector-db/src:/app/libs/auth/src:/app/libs/cache/src:/app/libs/logging/src:/app/libs/metrics/src:/app/libs/contracts/src
 
 ARG PORT=8000
 ENV PORT=${PORT}

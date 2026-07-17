@@ -23,6 +23,8 @@ class KnowledgeBase:
     organization_id: str
     description: str = ""
     is_active: bool = True
+    age_group: str | None = None
+    created_by_keycloak_id: str | None = None
 
 
 @dataclass
@@ -46,24 +48,33 @@ class ContentManagementService:
     # ── Knowledge Bases ───────────────────────────────────────────────────────
 
     async def create_kb(
-        self, name: str, organization_id: str, description: str = ""
+        self, name: str, organization_id: str, description: str = "",
+        age_group: str | None = None, created_by_keycloak_id: str | None = None,
     ) -> KnowledgeBase:
         kb_id = str(uuid.uuid4())
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO knowledge_bases (id, name, description, organization_id)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO knowledge_bases (id, name, description, organization_id,
+                                             age_group, created_by_keycloak_id)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 kb_id, name, description, organization_id,
+                age_group, created_by_keycloak_id,
             )
-        return KnowledgeBase(id=kb_id, name=name, organization_id=organization_id, description=description)
+        return KnowledgeBase(
+            id=kb_id, name=name, organization_id=organization_id,
+            description=description, age_group=age_group,
+            created_by_keycloak_id=created_by_keycloak_id,
+        )
 
     async def get_kb(self, kb_id: str) -> KnowledgeBase | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, name, description, organization_id, is_active FROM knowledge_bases WHERE id = $1",
+                "SELECT id, name, description, organization_id, is_active, "
+                "age_group, created_by_keycloak_id "
+                "FROM knowledge_bases WHERE id = $1",
                 kb_id,
             )
         if not row:
@@ -74,28 +85,42 @@ class ContentManagementService:
             description=row["description"] or "",
             organization_id=row["organization_id"],
             is_active=row["is_active"],
+            age_group=row.get("age_group"),
+            created_by_keycloak_id=row.get("created_by_keycloak_id"),
         )
 
+    async def get_kb_raw(self, kb_id: str) -> dict | None:
+        """Return a raw dict row including ownership fields."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, created_by_keycloak_id FROM knowledge_bases WHERE id = $1",
+                kb_id,
+            )
+        if not row:
+            return None
+        return {"id": str(row["id"]), "created_by_keycloak_id": row.get("created_by_keycloak_id")}
+
     async def list_kbs(
-        self, organization_id: str, include_archived: bool = False
+        self, organization_id: str, include_archived: bool = False, approved_only: bool = True
     ) -> list[KnowledgeBase]:
         async with self._pool.acquire() as conn:
+            approval_clause = "AND approval_status = 'approved'::kb_approval_status_enum" if approved_only else ""
             if include_archived:
                 rows = await conn.fetch(
-                    """
+                    f"""
                     SELECT id, name, description, organization_id, is_active
                     FROM knowledge_bases
-                    WHERE organization_id = $1
+                    WHERE organization_id = $1 {approval_clause}
                     ORDER BY is_active DESC, created_at DESC
                     """,
                     organization_id,
                 )
             else:
                 rows = await conn.fetch(
-                    """
+                    f"""
                     SELECT id, name, description, organization_id, is_active
                     FROM knowledge_bases
-                    WHERE organization_id = $1 AND is_active = true
+                    WHERE organization_id = $1 AND is_active = true {approval_clause}
                     ORDER BY created_at DESC
                     """,
                     organization_id,
@@ -112,18 +137,21 @@ class ContentManagementService:
         ]
 
     async def update_kb(
-        self, kb_id: str, name: str | None = None, description: str | None = None
+        self, kb_id: str, name: str | None = None, description: str | None = None,
+        age_group: str | None = None,
     ) -> KnowledgeBase | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 UPDATE knowledge_bases
                 SET name        = COALESCE($2, name),
-                    description = COALESCE($3, description)
+                    description = COALESCE($3, description),
+                    age_group   = COALESCE($4, age_group)
                 WHERE id = $1
-                RETURNING id, name, description, organization_id, is_active
+                RETURNING id, name, description, organization_id, is_active,
+                          age_group, created_by_keycloak_id
                 """,
-                kb_id, name, description,
+                kb_id, name, description, age_group,
             )
         if not row:
             return None
@@ -131,6 +159,8 @@ class ContentManagementService:
             id=str(row["id"]), name=row["name"],
             description=row["description"] or "",
             organization_id=row["organization_id"], is_active=row["is_active"],
+            age_group=row.get("age_group"),
+            created_by_keycloak_id=row.get("created_by_keycloak_id"),
         )
 
     async def archive_kb(self, kb_id: str) -> KnowledgeBase | None:
@@ -310,6 +340,65 @@ class ContentManagementService:
             retired_at=row["retired_at"],
         )
 
+
+    async def list_by_approval_status(
+        self,
+        status: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Return knowledge bases filtered by approval_status with total count."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, name, description, organization_id,
+                       approval_status, ai_overview, created_at
+                FROM knowledge_bases
+                WHERE approval_status = $1::kb_approval_status_enum
+                  AND is_active = true
+                ORDER BY created_at ASC
+                LIMIT $2 OFFSET $3
+                """,
+                status, limit, offset,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM knowledge_bases "
+                "WHERE approval_status = $1::kb_approval_status_enum AND is_active = true",
+                status,
+            )
+        return (
+            [
+                {
+                    "id": str(r["id"]),
+                    "name": r["name"],
+                    "description": r["description"] or "",
+                    "organization_id": r["organization_id"],
+                    "approval_status": str(r["approval_status"]),
+                    "ai_overview": r["ai_overview"],
+                    "created_at": r["created_at"].isoformat(),
+                }
+                for r in rows
+            ],
+            int(total or 0),
+        )
+
+    async def update_kb_field(self, kb_id: str, field: str, value: str) -> None:
+        """Generic single-field updater for approval workflow fields."""
+        allowed = {"approval_status", "ai_overview", "rejection_reason", "clarification_message"}
+        if field not in allowed:
+            raise ValueError(f"Field {field!r} not allowed for update")
+        # Use a safe lookup instead of direct string interpolation
+        field_sql = {
+            "approval_status":        "approval_status = $2::kb_approval_status_enum",
+            "ai_overview":            "ai_overview = $2",
+            "rejection_reason":       "rejection_reason = $2",
+            "clarification_message":  "clarification_message = $2",
+        }[field]
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE knowledge_bases SET {field_sql} WHERE id = $1",
+                kb_id, value,
+            )
 
     async def platform_stats(self) -> dict:
         """Return live counts for the home-page stats strip."""

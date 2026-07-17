@@ -1,0 +1,85 @@
+# Reusable architectural lint workflow — called by every service CI pipeline.
+# Enforces the canonical layer hierarchy (controller > service > repository > model > config)
+# using import-linter with the root .importlinter configuration from WO-009.
+#
+# Called via:
+#   uses: ./.github/workflows/shared-architectural-lint.yaml
+#   with:
+#     service_path: services/llm-gateway
+#
+# The job exits 0 (pass) for any path that has no Python src/ directory
+# (e.g., the frontend service), so it is safe to call from all workflows.
+
+name: "Shared — Architectural Lint"
+
+on:
+  workflow_call:
+    inputs:
+
+# Minimal permissions: only read the repo to run the lint check.
+permissions:
+  contents: read
+      service_path:
+        description: "Relative path to the service directory (e.g. services/llm-gateway)"
+        required: true
+        type: string
+
+jobs:
+  architectural-lint:
+    name: "Architectural Layer Lint"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check for Python source directory
+        id: check_python
+        run: |
+          if [ -d "${{ inputs.service_path }}/src" ]; then
+            echo "has_python=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_python=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No src/ directory found in ${{ inputs.service_path }} — skipping architectural lint"
+          fi
+
+      - name: Install import-linter and dependencies
+        if: steps.check_python.outputs.has_python == 'true'
+        run: |
+          pip install --quiet -r dev-requirements.txt
+          lint-imports --version
+
+      - name: Run architectural layer lint
+        if: steps.check_python.outputs.has_python == 'true'
+        working-directory: ${{ inputs.service_path }}
+        env:
+          PYTHONPATH: src
+        run: |
+          echo "Checking architectural layer contracts for ${{ inputs.service_path }}..."
+          echo "Using config: ../../.importlinter"
+          echo ""
+
+          # Run lint-imports scoped to this service's src package.
+          # Returns exit code 1 if any layer contract is violated.
+          lint-imports --config ../../.importlinter
+
+          echo ""
+          echo "✅ No architectural layer violations in ${{ inputs.service_path }}"
+
+      - name: Annotate on failure
+        if: failure() && steps.check_python.outputs.has_python == 'true'
+        run: |
+          echo "::error title=Architectural Layer Violation::import-linter detected a layer violation in ${{ inputs.service_path }}."
+          echo "::error::Ensure no lower-layer module (repository, model, config) imports from a higher-layer module (service, api/controller)."
+          echo "::error::Run 'make lint-layers' locally to reproduce. See .importlinter for contract definitions."
+          echo ""
+          echo "Common violations to check:"
+          echo "  - src/repository.py or cache/ importing from src/service.py"
+          echo "  - src/service.py importing from src/api/"
+          echo "  - libs/* importing from any service's api or service layer"
+          exit 1

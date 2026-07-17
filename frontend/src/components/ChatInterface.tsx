@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { CHAT_API, KB_API } from '../config/api';
+import { CHAT_API, KB_API, RAG_API } from '../config/api';
 import { useUser } from '../auth/UserContext';
 
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  sources?: Array<{ chunk_id: string; document_title: string }>;
+  sources?: Array<{
+    chunk_id: string;
+    document_id?: string;
+    document_title: string;
+    score?: number;
+    excerpt?: string;
+  }>;
   rating?: 'up' | 'down';
   confidence?: number;
   source_type?: 'documents' | 'ai_knowledge';
 }
 
-interface Session { id: string; title: string; }
+interface Session { id: string; title: string; created_at?: string; }
 interface KnowledgeBase { id: string; name: string; }
 
 // Persist anonymous session IDs in localStorage so they survive page reloads
@@ -47,6 +53,9 @@ export function ChatInterface() {
   // Rename state — which session is being edited inline
   const [renamingId, setRenamingId]       = useState<string | null>(null);
   const [renameValue, setRenameValue]     = useState('');
+  const [deletingId, setDeletingId]       = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const bottomRef    = useRef<HTMLDivElement>(null);
   const creatingRef  = useRef(false); // guard against double-creation
 
@@ -75,6 +84,21 @@ export function ChatInterface() {
         setSelectedKbId('__none__'); // backend unreachable — still create demo session
       });
   }, []);
+
+  // Fetch suggested questions when a knowledge base is selected
+  useEffect(() => {
+    if (!selectedKbId || selectedKbId === '__none__') {
+      setSuggestedQuestions([]);
+      return;
+    }
+    fetch(`${RAG_API}/suggested-questions?knowledge_base_id=${encodeURIComponent(selectedKbId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { questions?: string[] } | null) => {
+        if (data?.questions?.length) setSuggestedQuestions(data.questions);
+        else setSuggestedQuestions([]);
+      })
+      .catch(() => setSuggestedQuestions([]));
+  }, [selectedKbId]);
 
   // Load saved sessions — server for authenticated users, localStorage IDs for anonymous
   useEffect(() => {
@@ -278,6 +302,22 @@ export function ChatInterface() {
     }).catch(() => {});
   }, [activeSession]);
 
+  const deleteSession = useCallback(async (sessionId: string) => {
+    setDeletingId(sessionId);
+    try {
+      await fetch(`${CHAT_API}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+      setSessions(s => s.filter(x => x.id !== sessionId));
+      if (activeSession === sessionId) {
+        setActiveSession(null);
+        setMessages([]);
+        setActiveTitle('New Chat');
+      }
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  }, [activeSession]);
+
   const rateMessage = (id: string, rating: 'up' | 'down') => {
     setMessages(msgs => msgs.map(m => m.id === id ? { ...m, rating } : m));
     // Track rating in analytics
@@ -310,58 +350,101 @@ export function ChatInterface() {
         <button className="chat-new-btn" onClick={() => createSession(selectedKbId === '__none__' ? undefined : selectedKbId)}>+ New Chat</button>
 
         <ul className="chat-sessions-list" role="list">
-          {sessions.length === 0 && (
-            <li style={{ padding: '12px 16px', color: '#666', fontSize: '0.78rem' }}>
-              No chats yet — start a new one above.
-            </li>
-          )}
-          {sessions.map(s => (
-            <li key={s.id} style={{ position: 'relative' }}>
-              {renamingId === s.id ? (
-                /* ── Inline rename input ── */
-                <div style={{ display: 'flex', gap: 4, padding: '4px 8px' }}>
-                  <input
-                    autoFocus
-                    value={renameValue}
-                    onChange={e => setRenameValue(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
-                      if (e.key === 'Escape') setRenamingId(null);
+          {(() => {
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const recentSessions = sessions.filter(s =>
+              !s.created_at || new Date(s.created_at).getTime() >= sevenDaysAgo
+            );
+            if (recentSessions.length === 0) {
+              return (
+                <li style={{ padding: '16px', color: '#666', fontSize: '0.8rem', textAlign: 'center', lineHeight: 1.5 }}>
+                  <span style={{ display: 'block', fontSize: '1.5rem', marginBottom: 6 }}>💬</span>
+                  No chats in the last 7 days.<br />Start a new chat above!
+                </li>
+              );
+            }
+            return recentSessions.map(s => (
+              <li key={s.id} style={{ position: 'relative' }}>
+                {renamingId === s.id ? (
+                  /* ── Inline rename input ── */
+                  <div style={{ display: 'flex', gap: 4, padding: '4px 8px' }}>
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { renameSession(s.id, renameValue); setRenamingId(null); }
+                        if (e.key === 'Escape') setRenamingId(null);
+                      }}
+                      onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
+                      style={{ flex: 1, fontSize: '0.8rem', padding: '4px 6px', borderRadius: 4, border: '1px solid #7c3aed', background: '#1a1a2e', color: '#fff', outline: 'none' }}
+                      maxLength={80}
+                    />
+                  </div>
+                ) : confirmDeleteId === s.id ? (
+                  /* ── Delete confirmation ── */
+                  <div style={{ padding: '8px 12px', background: '#1a0a0a', borderLeft: '3px solid #ef4444' }}>
+                    <p style={{ fontSize: '0.75rem', color: '#fca5a5', marginBottom: 6 }}>
+                      Delete this chat?
+                    </p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => deleteSession(s.id)}
+                        disabled={deletingId === s.id}
+                        style={{ flex: 1, background: '#ef4444', color: '#fff', border: 'none',
+                                 padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem' }}>
+                        {deletingId === s.id ? '…' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        style={{ flex: 1, background: '#333', color: '#ccc', border: 'none',
+                                 padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.75rem' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Normal session row ── */
+                  <button
+                    className={`chat-session-item${activeSession === s.id ? ' active' : ''}`}
+                    onClick={() => selectSession(s)}
+                    title="Double-click to rename"
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      setRenamingId(s.id);
+                      setRenameValue(s.title);
                     }}
-                    onBlur={() => { renameSession(s.id, renameValue); setRenamingId(null); }}
-                    style={{ flex: 1, fontSize: '0.8rem', padding: '4px 6px', borderRadius: 4, border: '1px solid #7c3aed', background: '#1a1a2e', color: '#fff', outline: 'none' }}
-                    maxLength={80}
-                  />
-                </div>
-              ) : (
-                /* ── Normal session row ── */
-                <button
-                  className={`chat-session-item${activeSession === s.id ? ' active' : ''}`}
-                  onClick={() => selectSession(s)}
-                  title="Double-click to rename"
-                  onDoubleClick={e => {
-                    e.stopPropagation();
-                    setRenamingId(s.id);
-                    setRenameValue(s.title);
-                  }}
-                  style={{ paddingRight: 32 }}
-                >
-                  <span className="chat-session-icon">💬</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {s.title}
-                  </span>
-                </button>
-              )}
-            </li>
-          ))}
+                    style={{ paddingRight: 32 }}
+                  >
+                    <span className="chat-session-icon">💬</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {s.title}
+                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
+                      style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                               background: 'none', border: 'none', color: '#555', cursor: 'pointer',
+                               fontSize: '0.8rem', padding: '2px 4px', borderRadius: 3 }}
+                      title="Delete session"
+                      onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#555')}
+                      aria-label="Delete session"
+                    >
+                      🗑
+                    </button>
+                  </button>
+                )}
+              </li>
+            ));
+          })()}
         </ul>
 
-        {/* Starter prompts */}
+        {/* Starter / suggested prompts */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid #333' }}>
           <p style={{ fontSize: '0.7rem', color: '#888', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Suggested questions
           </p>
-          {STARTER_PROMPTS.map(q => (
+          {(suggestedQuestions.length > 0 ? suggestedQuestions : STARTER_PROMPTS).map(q => (
             <button key={q} onClick={() => sendMessage(q)}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 0', background: 'transparent', border: 'none', color: '#999', fontSize: '0.75rem', cursor: 'pointer', lineHeight: 1.4 }}
               onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
@@ -427,6 +510,36 @@ export function ChatInterface() {
                       onClick={() => rateMessage(m.id, 'up')} aria-label="Helpful">👍</button>
                     <button className={`chat-rate-btn${m.rating === 'down' ? ' active' : ''}`}
                       onClick={() => rateMessage(m.id, 'down')} aria-label="Not helpful">👎</button>
+                  </div>
+                )}
+                {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
+                  <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,255,255,0.04)',
+                                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6 }}>
+                    <p style={{ fontSize: '0.68rem', color: '#888', marginBottom: 4,
+                                textTransform: 'uppercase', letterSpacing: '0.4px', fontWeight: 600 }}>
+                      📄 Sources
+                    </p>
+                    {m.sources.map((src, i) => (
+                      <div key={src.chunk_id || i}
+                        style={{ fontSize: '0.75rem', color: '#bbb', padding: '2px 0',
+                                 borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                                 paddingTop: i > 0 ? 4 : 2 }}>
+                        <span style={{ fontWeight: 600, color: '#a0c4ff' }}>{src.document_title}</span>
+                        {src.score !== undefined && (
+                          <span style={{ marginLeft: 6, fontSize: '0.68rem', color: '#666' }}>
+                            ({Math.round(src.score * 100)}%)
+                          </span>
+                        )}
+                        {src.excerpt && (
+                          <p style={{ margin: '2px 0 0', color: '#777', fontSize: '0.7rem',
+                                      overflow: 'hidden', textOverflow: 'ellipsis',
+                                      display: '-webkit-box', WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical' }}>
+                            {src.excerpt}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

@@ -1,0 +1,103 @@
+# Architectural lint PR gate — runs import-linter on every Python service
+# whenever any service code changes are pushed as a pull request targeting main.
+#
+# This is the PR-time enforcement layer. The same shared-architectural-lint.yaml
+# workflow is also called by each service's CI pipeline on push to main.
+#
+# A failed lint here blocks the PR from merging and tells the developer
+# exactly which import path violates the layer contract.
+
+name: "Architectural Lint — PR Gate"
+
+# Minimal permissions: read contents and write PR checks (to post status on PRs).
+permissions:
+  contents: read
+  pull-requests: read
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "libs/**"
+      - ".importlinter"
+      - "dev-requirements.txt"
+
+jobs:
+  lint-admin-config:
+    name: "admin-config layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/admin-config
+
+  lint-agent-reasoning:
+    name: "agent-reasoning layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/agent-reasoning
+
+  lint-analytics:
+    name: "analytics layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/analytics
+
+  lint-assessment:
+    name: "assessment layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/assessment
+
+  lint-audit:
+    name: "audit layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/audit
+
+  lint-chat-orchestrator:
+    name: "chat-orchestrator layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/chat-orchestrator
+
+  lint-confidence-grader:
+    name: "confidence-grader layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/confidence-grader
+
+  lint-content-ingestion:
+    name: "content-ingestion layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/content-ingestion
+
+  lint-content-management:
+    name: "content-management layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/content-management
+
+  lint-embedding-service:
+    name: "embedding-service layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/embedding-service
+
+  lint-learner-profile:
+    name: "learner-profile layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/learner-profile
+
+  lint-llm-gateway:
+    name: "llm-gateway layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/llm-gateway
+
+  lint-rag-pipeline:
+    name: "rag-pipeline layers"
+    uses: ./.github/workflows/shared-architectural-lint.yaml
+    with:
+      service_path: services/rag-pipeline

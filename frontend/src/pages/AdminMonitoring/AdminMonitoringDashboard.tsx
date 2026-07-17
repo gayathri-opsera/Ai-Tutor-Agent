@@ -1,48 +1,70 @@
 import { useEffect, useState } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from 'recharts';
 
 const ANALYTICS_API = '/api/v1/analytics';
 
 const SERVICES = [
-  { name: 'LLM Gateway',        port: 18000, path: '/api/internal/llm/health' },
-  { name: 'Embedding Service',  port: 8001,  path: '/api/internal/embeddings/health' },
-  { name: 'RAG Pipeline',       port: 8002,  path: '/health' },
-  { name: 'Chat Orchestrator',  port: 8004,  path: '/health' },
-  { name: 'Agent Reasoning',    port: 8005,  path: '/health' },
-  { name: 'Confidence Grader',  port: 8006,  path: '/health' },
-  { name: 'Learner Profile',    port: 8008,  path: '/health' },
-  { name: 'Assessment Engine',  port: 8010,  path: '/health' },
-  { name: 'Analytics',          port: 8011,  path: '/health' },
+  { name: 'LLM Gateway',        port: 18000 },
+  { name: 'Embedding Service',  port: 8001  },
+  { name: 'RAG Pipeline',       port: 8002  },
+  { name: 'Chat Orchestrator',  port: 8004  },
+  { name: 'Agent Reasoning',    port: 8005  },
+  { name: 'Confidence Grader',  port: 8006  },
+  { name: 'Learner Profile',    port: 8008  },
+  { name: 'Assessment Engine',  port: 8010  },
+  { name: 'Analytics',          port: 8011  },
 ];
+
+const PIE_COLORS: Record<string, string> = {
+  active: '#10b981', processing: '#f59e0b', retired: '#6b7280',
+  error: '#ef4444', pending: '#a855f7',
+};
 
 interface AnalyticsSummary {
   session_count: number; query_volume: number; average_rating: number;
-  topic_distribution: Record<string,number>;
+  topic_distribution: Record<string, number>;
   recent_events: { event_type: string; user_id: string; topic: string; created_at: string }[];
+}
+interface AdminDashboard {
+  total_learners: number;
+  total_courses: number;
+  active_courses: number;
+  platform_completion_rate: number;
+  approval_status_distribution: Record<string, number>;
+  document_status_breakdown?: Record<string, number>;
+  top_courses_by_enrollment: { name: string; enrolled: number; completion_rate: number }[];
+}
+
+function StatCard({ emoji, title, value, sub, accent }: {
+  emoji: string; title: string; value: string | number; sub?: string; accent?: string;
+}) {
+  return (
+    <div className="stat-card">
+      <div className="stat-card-icon">{emoji}</div>
+      <div className="stat-card-value" style={{ color: accent }}>{value}</div>
+      <div className="stat-card-label">{title}</div>
+      {sub && <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
 }
 
 export function AdminMonitoringDashboard() {
-  const [summary, setSummary]   = useState<AnalyticsSummary | null>(null);
-  const [health, setHealth]     = useState<Record<string, 'healthy' | 'unknown'>>({});
-  const [loading, setLoading]   = useState(true);
+  const [summary, setSummary]       = useState<AnalyticsSummary | null>(null);
+  const [adminData, setAdminData]   = useState<AdminDashboard | null>(null);
+  const [loading, setLoading]       = useState(true);
 
   useEffect(() => {
-    fetch(`${ANALYTICS_API}/summary`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setSummary(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    // Health-check each service via nginx (proxied)
-    const checks: Record<string, 'healthy' | 'unknown'> = {};
-    Promise.allSettled(
-      SERVICES.map(s =>
-        fetch(`/api/v1/analytics/summary`, { signal: AbortSignal.timeout(3000) })
-          .then(() => { checks[s.name] = 'healthy'; })
-          .catch(() => { checks[s.name] = 'unknown'; })
-      )
-    ).then(() => setHealth({ ...checks }));
+    Promise.all([
+      fetch(`${ANALYTICS_API}/summary`).then(r => r.ok ? r.json() : null),
+      fetch(`${ANALYTICS_API}/admin/dashboard`).then(r => r.ok ? r.json() : null),
+    ]).then(([s, a]) => {
+      if (s) setSummary(s);
+      if (a) setAdminData(a);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   const topicData = summary
@@ -50,6 +72,13 @@ export function AdminMonitoringDashboard() {
     : [];
 
   const recentEvents = summary?.recent_events?.slice(0, 8) ?? [];
+
+  // Document status pie data — prefer dedicated field, fall back to approval distribution
+  const docStatusData = Object.entries(
+    adminData?.document_status_breakdown ?? adminData?.approval_status_distribution ?? {}
+  ).map(([status, count]) => ({ name: status, value: count }));
+
+  const topCourses = adminData?.top_courses_by_enrollment ?? [];
 
   return (
     <div>
@@ -67,24 +96,50 @@ export function AdminMonitoringDashboard() {
 
       <div className="container">
         <div className="section">
-          {/* Live stats */}
+
+          {/* Platform stat cards */}
           <div className="stats-row">
-            {[
-              { icon: '📚', value: String(summary?.session_count ?? 0), label: 'Total Sessions' },
-              { icon: '💬', value: String(summary?.query_volume ?? 0), label: 'Total Queries' },
-              { icon: '⭐', value: summary?.average_rating ? summary.average_rating.toFixed(1) : 'N/A', label: 'Avg Rating' },
-              { icon: '📊', value: String(Object.keys(summary?.topic_distribution ?? {}).length), label: 'Topics Explored' },
-            ].map(s => (
-              <div className="stat-card" key={s.label}>
-                <div className="stat-card-icon">{s.icon}</div>
-                <div className="stat-card-value">{loading ? '…' : s.value}</div>
-                <div className="stat-card-label">{s.label}</div>
-              </div>
-            ))}
+            <StatCard emoji="👥" title="Total Learners"
+              value={loading ? '…' : String(adminData?.total_learners ?? summary?.session_count ?? 0)}
+              accent="#7c3aed" />
+            <StatCard emoji="📚" title="Total Courses"
+              value={loading ? '…' : String(adminData?.total_courses ?? 0)}
+              accent="#0ea5e9" />
+            <StatCard emoji="✅" title="Active Courses"
+              value={loading ? '…' : String(adminData?.active_courses ?? 0)}
+              accent="#10b981" />
+            <StatCard emoji="📈" title="Platform Completion"
+              value={loading ? '…' : `${adminData?.platform_completion_rate ?? 0}%`}
+              sub="across all learners" accent="#f59e0b" />
           </div>
 
-          {/* Charts */}
+          {/* Charts row: document status pie + top topics bar */}
           <div className="monitoring-grid mb-6">
+            {/* Document / approval status breakdown */}
+            <div className="monitor-card">
+              <p className="monitor-card-title">Course Approval Status</p>
+              {docStatusData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={docStatusData} cx="50%" cy="50%" outerRadius={80}
+                      dataKey="value" label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`}
+                      labelLine={false}>
+                      {docStatusData.map((entry, i) => (
+                        <Cell key={i} fill={PIE_COLORS[entry.name] ?? '#94a3b8'} />
+                      ))}
+                    </Pie>
+                    <Legend formatter={(v) => v} />
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-muted" style={{ textAlign: 'center', paddingTop: 40 }}>
+                  No course data yet
+                </p>
+              )}
+            </div>
+
+            {/* Top queried topics */}
             {topicData.length > 0 ? (
               <div className="monitor-card">
                 <p className="monitor-card-title">Top Queried Topics</p>
@@ -99,47 +154,72 @@ export function AdminMonitoringDashboard() {
               </div>
             ) : (
               <div className="monitor-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 220 }}>
-                <p className="text-muted">No analytics data yet — start chatting to see metrics</p>
+                <p className="text-muted">No analytics data yet</p>
               </div>
             )}
-
-            {/* Recent events */}
-            <div className="monitor-card">
-              <p className="monitor-card-title">Recent Events</p>
-              {recentEvents.length === 0 ? (
-                <p className="text-muted text-sm">No events yet</p>
-              ) : (
-                <table style={{ width: '100%', fontSize: '0.78rem' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', fontWeight: 600, paddingBottom: 6 }}>Type</th>
-                      <th style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', fontWeight: 600, paddingBottom: 6 }}>User</th>
-                      <th style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', fontWeight: 600, paddingBottom: 6 }}>Topic</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentEvents.map((e, i) => (
-                      <tr key={i}>
-                        <td style={{ padding: '5px 0' }}>
-                          <span style={{
-                            background: e.event_type === 'session.created' ? '#ede9fe' : '#dcfce7',
-                            color: e.event_type === 'session.created' ? '#7c3aed' : '#166534',
-                            borderRadius: 6, padding: '2px 7px', fontSize: '0.68rem', fontWeight: 600,
-                          }}>
-                            {e.event_type}
-                          </span>
-                        </td>
-                        <td style={{ padding: '5px 8px', color: 'var(--muted)' }}>{e.user_id?.slice(0, 12) || '—'}</td>
-                        <td style={{ padding: '5px 0', color: 'var(--text)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {e.topic?.slice(0, 40) || '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
           </div>
+
+          {/* Top courses by enrollment */}
+          {topCourses.length > 0 && (
+            <div className="monitor-card" style={{ marginBottom: '1.5rem' }}>
+              <p className="monitor-card-title">Top 10 Courses by Enrollment</p>
+              <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Course</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Enrolled</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Completion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topCourses.slice(0, 10).map((c, i) => (
+                    <tr key={i} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 500 }}>{c.name}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#7c3aed', fontWeight: 600 }}>{c.enrolled}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#10b981' }}>
+                        {Math.round(c.completion_rate * 100)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Recent events */}
+          {recentEvents.length > 0 && (
+            <div className="monitor-card" style={{ marginBottom: '1.5rem' }}>
+              <p className="monitor-card-title">Recent Events</p>
+              <table style={{ width: '100%', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', fontWeight: 600, paddingBottom: 6 }}>Type</th>
+                    <th style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', fontWeight: 600, paddingBottom: 6 }}>User</th>
+                    <th style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', fontWeight: 600, paddingBottom: 6 }}>Topic</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentEvents.map((e, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: '5px 0' }}>
+                        <span style={{
+                          background: e.event_type === 'session.created' ? '#ede9fe' : '#dcfce7',
+                          color: e.event_type === 'session.created' ? '#7c3aed' : '#166534',
+                          borderRadius: 6, padding: '2px 7px', fontSize: '0.68rem', fontWeight: 600,
+                        }}>
+                          {e.event_type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '5px 8px', color: 'var(--muted)' }}>{e.user_id?.slice(0, 12) || '—'}</td>
+                      <td style={{ padding: '5px 0', color: 'var(--text)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {e.topic?.slice(0, 40) || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Service Health */}
           <div className="monitor-card">

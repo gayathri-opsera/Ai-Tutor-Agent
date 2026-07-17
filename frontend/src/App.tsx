@@ -4,20 +4,37 @@ import { Navbar } from './components/Navbar';
 import { ChatInterface } from './components/ChatInterface';
 import { HomePage } from './pages/Home/HomePage';
 import { LoginPage } from './pages/Login/LoginPage';
+import { PendingApprovalPage } from './pages/PendingApproval/PendingApprovalPage';
 import { CourseDetailPage } from './pages/Course/CourseDetailPage';
 import { MyLearningPage } from './pages/MyLearning/MyLearningPage';
 import { KnowledgeBaseList } from './pages/ContentManagement/KnowledgeBaseList';
 import { DocumentUpload } from './pages/ContentManagement/DocumentUpload';
 import { DocumentStatus } from './pages/ContentManagement/DocumentStatus';
+import { CreatorCourseManagement } from './pages/ContentManagement/CreatorCourseManagement';
 import { LearnerProgressDashboard } from './pages/LearnerProgress/LearnerProgressDashboard';
 import { AdminConfigPanel } from './pages/AdminConfig/AdminConfigPanel';
 import { AdminMonitoringDashboard } from './pages/AdminMonitoring/AdminMonitoringDashboard';
+import { AdminUsersPage } from './pages/AdminUsers/AdminUsersPage';
+import { AdminDashboardPage } from './pages/AdminDashboard/AdminDashboardPage';
+import { CreatorDashboardPage } from './pages/CreatorDashboard/CreatorDashboardPage';
 import { AssessmentPage } from './pages/Assessment/AssessmentPage';
 
 export default function App() {
-  const { user } = useUser();
+  const { user, initializing, login } = useUser();
 
-  if (!user) return <LoginPage />;
+  if (initializing) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage onLogin={login} />;
+
+  if (user.approvalStatus === 'pending') return <PendingApprovalPage />;
+
+  const isAdmin = user.isAdmin;
 
   return (
     <div className="page-shell">
@@ -39,10 +56,20 @@ export default function App() {
           <Route path="/progress"            element={<LearnerProgressDashboard />} />
           <Route path="/assessment/:id"      element={<AssessmentPage />} />
 
+          {/* ── Creator ────────────────────────────────────────── */}
+          {(user.isCreator || isAdmin) && (
+            <Route path="/creator/dashboard" element={<CreatorDashboardPage />} />
+          )}
+          {(user.isCreator || isAdmin) && (
+            <Route path="/creator/courses" element={<CreatorCourseManagement />} />
+          )}
+
           {/* ── Admin (role-gated) ──────────────────────────── */}
-          {user.role === 'Admin' && <>
+          {isAdmin && <>
             <Route path="/admin/config"      element={<AdminConfigPanel />} />
             <Route path="/admin/monitoring"  element={<AdminMonitoringDashboard />} />
+            <Route path="/admin/users"       element={<AdminUsersPage />} />
+            <Route path="/admin/dashboard"   element={<AdminDashboardPage />} />
           </>}
 
           <Route path="*" element={<Navigate to="/" replace />} />

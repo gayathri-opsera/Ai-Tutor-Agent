@@ -1,0 +1,99 @@
+name: "CI/CD — Matrix Coordinator"
+# Coordinator workflow implementing path-based matrix strategy (WO-019).
+#
+# On every push to main (or PR), this workflow:
+#   1. Detects which service source paths and shared libraries changed
+#   2. Consults .github/service-dependencies.json for transitive dependencies
+#   3. Builds a GitHub Actions matrix of only the affected services
+#   4. Dispatches shared-deploy.yaml for each affected service in parallel
+#
+# When only docs/, README, or .github/ files change, no build jobs are triggered.
+#
+# To manually rebuild all services: use workflow_dispatch with force_all=true.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger"
+        required: false
+        default: "manual deploy"
+      force_all:
+        description: "Build all services regardless of changed paths (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # ── Stage 1 ──────────────────────────────────────────────────────────────
+  # Detect which services are affected by this commit/PR.
+  detect-changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      has_changes: ${{ steps.build-matrix.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Build service matrix
+        id: build-matrix
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FORCE_ALL: ${{ inputs.force_all }}
+        run: |
+          if [[ "${FORCE_ALL}" == "true" ]]; then
+            echo "[matrix] force_all=true — rebuilding every service"
+            python3 .github/scripts/detect-changes.py --all
+          else
+            python3 .github/scripts/detect-changes.py
+          fi
+
+  # ── Stage 2 ──────────────────────────────────────────────────────────────
+  # Fan-out: build only the services identified in Stage 1.
+  # GitHub Actions resolves ${{ matrix.xxx }} in 'with:' for reusable workflows.
+  build:
+    name: "Build ${{ matrix.service }}"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    strategy:
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+      fail-fast: false
+    uses: ./.github/workflows/shared-deploy.yaml
+    secrets: inherit
+    with:
+      service: ${{ matrix.service }}
+      port: ${{ matrix.port }}
+      ecr_repo: ${{ matrix.ecr_repo }}
+      placeholder_key: ${{ matrix.placeholder_key }}
+      dockerfile_pattern: ${{ matrix.dockerfile_pattern }}
+      service_path: ${{ matrix.service_path }}
+      contract_service_name: ${{ matrix.contract_service_name }}
+
+  # ── Summary ──────────────────────────────────────────────────────────────
+  # Provide a single status check that PRs can require (optional gate).
+  summary:
+    name: Matrix build summary
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build]
+    if: always()
+    steps:
+      - name: Report outcome
+        run: |
+          CHANGED='${{ needs.detect-changes.outputs.has_changes }}'
+          if [[ "${CHANGED}" == "false" ]]; then
+            echo "No service-relevant files changed — all builds skipped."
+          else
+            echo "Matrix build complete."
+          fi

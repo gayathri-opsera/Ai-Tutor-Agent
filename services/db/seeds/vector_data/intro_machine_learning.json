@@ -1,0 +1,19 @@
+{
+  "id": "seed-doc-001",
+  "title": "Introduction to Machine Learning",
+  "knowledge_base_id": "seed-kb-general",
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "text": "Machine learning is a branch of artificial intelligence (AI) that enables systems to learn and improve from experience without being explicitly programmed. It focuses on developing computer programs that can access data and use it to learn for themselves. The process begins with observations or data to look for patterns and make better decisions in the future. Machine learning algorithms include supervised learning, unsupervised learning, and reinforcement learning."
+    },
+    {
+      "chunk_index": 1,
+      "text": "Supervised learning is the most common type of machine learning. In supervised learning, the algorithm is trained on labeled data — input-output pairs where the correct answer is known. Common algorithms include linear regression for continuous output, logistic regression for classification, decision trees, random forests, support vector machines (SVMs), and neural networks. The goal is to learn a mapping from inputs to outputs that generalises to unseen data."
+    },
+    {
+      "chunk_index": 2,
+      "text": "Unsupervised learning deals with unlabeled data. The algorithm tries to find hidden patterns or intrinsic structures in the data. Key techniques include clustering (k-means, hierarchical clustering, DBSCAN), dimensionality reduction (PCA, t-SNE, autoencoders), and generative models (VAEs, GANs). Unsupervised learning is useful for exploratory data analysis, anomaly detection, and representation learning."
+    }
+  ]
+}

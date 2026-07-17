@@ -1,0 +1,26 @@
+[
+  {
+    "_comment": "User with pending approval — cannot access platform",
+    "id": "11111111-1111-1111-1111-111111111111",
+    "keycloak_id": "kc-pending-001",
+    "email_hash": "a9993e364706816aba3e25717850c26c9cd0d89d",
+    "approval_status": "pending",
+    "created_at": "2026-07-17T10:00:00+00:00"
+  },
+  {
+    "_comment": "Approved user — full platform access",
+    "id": "22222222-2222-2222-2222-222222222222",
+    "keycloak_id": "kc-approved-001",
+    "email_hash": "b4b2a79e6d208dd2b4f8e5b9d3f6a1c2e0b7d8f9",
+    "approval_status": "approved",
+    "created_at": "2026-07-01T08:30:00+00:00"
+  },
+  {
+    "_comment": "Rejected user — permanently blocked",
+    "id": "33333333-3333-3333-3333-333333333333",
+    "keycloak_id": "kc-rejected-001",
+    "email_hash": "c5c3b80f7e319ee3c5f9f6ca4g7b2d3f1a8e9012",
+    "approval_status": "rejected",
+    "created_at": "2026-07-10T14:00:00+00:00"
+  }
+]

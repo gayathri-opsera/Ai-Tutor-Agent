@@ -1,0 +1,79 @@
+# Reusable contract validation workflow — called by every service CI pipeline (WO-016).
+# Validates that the FastAPI service's generated OpenAPI schema matches the stored
+# baseline in libs/contracts/openapi/<service>.openapi.json.
+#
+# Called via:
+#   uses: ./.github/workflows/shared-contract-validation.yaml
+#   with:
+#     service_name: llm-gateway
+#
+# The job exits 0 for services with no Python src/ directory (e.g. frontend).
+
+name: "Shared — Contract Validation"
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: "Service name matching a key in validate_openapi.SERVICES (e.g. llm-gateway)"
+        required: true
+        type: string
+
+# Minimal permissions: only read the repo to run the validation.
+permissions:
+  contents: read
+
+jobs:
+  contract-validation:
+    name: "OpenAPI Contract Validation"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check for Python service directory
+        id: check_python
+        run: |
+          if [ -d "services/${{ inputs.service_name }}/src" ]; then
+            echo "has_python=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_python=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No src/ directory found in services/${{ inputs.service_name }} — skipping contract validation"
+          fi
+
+      - name: Install service dependencies
+        if: steps.check_python.outputs.has_python == 'true'
+        run: |
+          # Install libs/contracts dependencies (pydantic)
+          pip install --quiet -r libs/contracts/requirements.txt
+
+          # Install service-specific requirements (FastAPI, etc.)
+          if [ -f "services/${{ inputs.service_name }}/requirements.txt" ]; then
+            pip install --quiet -r "services/${{ inputs.service_name }}/requirements.txt" \
+              || echo "⚠️  Some requirements may have failed (network-restricted env) — continuing"
+          fi
+
+      - name: Run OpenAPI contract validation
+        if: steps.check_python.outputs.has_python == 'true'
+        run: |
+          echo "Validating OpenAPI schema for service: ${{ inputs.service_name }}"
+          echo "Baseline: libs/contracts/openapi/${{ inputs.service_name }}.openapi.json"
+          echo ""
+
+          python scripts/validate-openapi.py --service "${{ inputs.service_name }}"
+
+      - name: Annotate on failure
+        if: failure() && steps.check_python.outputs.has_python == 'true'
+        run: |
+          echo "::error title=OpenAPI Contract Violation::Contract validation failed for ${{ inputs.service_name }}."
+          echo "::error::The generated OpenAPI schema differs from the stored baseline."
+          echo "::error::If this is an intentional API change, update the baseline:"
+          echo "::error::  python scripts/validate-openapi.py --service ${{ inputs.service_name }} --update"
+          echo "::error::Then commit the updated libs/contracts/openapi/${{ inputs.service_name }}.openapi.json file."
+          exit 1

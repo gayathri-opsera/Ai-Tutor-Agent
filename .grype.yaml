@@ -1,0 +1,30 @@
+# Grype vulnerability scan configuration for ai-tutor-agent.
+# Ignore rules allow known-acceptable vulnerabilities to be suppressed while
+# keeping the fail-build: true gate enforced for all other HIGH/CRITICAL CVEs.
+#
+# Before adding an ignore entry, document:
+#   1. The CVE ID and affected package
+#   2. Why it is acceptable (e.g. dev-only dep, no fix available, mitigated elsewhere)
+#   3. A review ticket or PR reference
+
+ignore:
+  # Format:
+  # - vulnerability: CVE-XXXX-XXXXX
+  #   package:
+  #     name: <package-name>
+  #     version: <affected-version>
+  #     type: python|deb|rpm|...
+  #   reason: "<justification>"
+  #
+  # Example (remove if real CVE added):
+  # - vulnerability: CVE-2024-00000
+  #   package:
+  #     name: example-lib
+  #     type: python
+  #   reason: "Dev-only dependency not included in production image. Tracked in TICKET-123."
+
+# Additional Grype options
+# db:
+#   auto-update: true
+
+output: sarif

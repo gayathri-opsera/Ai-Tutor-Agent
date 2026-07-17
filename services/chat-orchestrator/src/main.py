@@ -8,7 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.chat import router as chat_router
-from src.service import ChatOrchestratorService, DatabaseSessionRepository, InMemorySessionCache, MockSessionRepository
+from src.repository import DatabaseSessionRepository, InMemorySessionCache, MockSessionRepository
+from src.service import ChatOrchestratorService
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 

@@ -66,6 +66,18 @@ ADMIN_CONFIG_CHANGES = TopicSpec(
     retention_ms=-1,                           # infinite — config history
 )
 
+USER_APPROVAL_EVENTS = TopicSpec(
+    name="user-approval-events",
+    partitions=4,
+    retention_ms=365 * 24 * 60 * 60 * 1000,  # 1 year — compliance requirement
+)
+
+COURSE_APPROVAL_EVENTS = TopicSpec(
+    name="course-approval-events",
+    partitions=4,
+    retention_ms=365 * 24 * 60 * 60 * 1000,  # 1 year — compliance requirement
+)
+
 ALL_TOPICS: list[TopicSpec] = [
     CONTENT_INGESTION_EVENTS,
     CONTENT_UPDATE_EVENTS,
@@ -74,4 +86,6 @@ ALL_TOPICS: list[TopicSpec] = [
     AUDIT_EVENTS,
     ANALYTICS_EVENTS,
     ADMIN_CONFIG_CHANGES,
+    USER_APPROVAL_EVENTS,
+    COURSE_APPROVAL_EVENTS,
 ]

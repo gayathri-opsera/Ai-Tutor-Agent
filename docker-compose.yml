@@ -70,7 +70,10 @@ services:
       - "50051:50051"
     environment:
       QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
+      AUTHENTICATION_APIKEY_ENABLED: "true"
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "local-dev-key"
+      AUTHENTICATION_APIKEY_USERS: "ai-tutor-service"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
       DEFAULT_VECTORIZER_MODULE: none
       ENABLE_MODULES: ""
@@ -118,7 +121,7 @@ services:
 
   # Run Alembic migrations (runs once, then exits)
   db-migrate:
-    image: python:3.11-slim
+    image: python:3.13-slim
     networks:
       - ai-tutor-net
     env_file: .env

@@ -6,7 +6,9 @@ from .topics import (
     CACHE_METRICS,
     CONTENT_INGESTION_EVENTS,
     CONTENT_UPDATE_EVENTS,
+    COURSE_APPROVAL_EVENTS,
     LLM_USAGE_EVENTS,
+    USER_APPROVAL_EVENTS,
     TopicSpec,
 )
 from .producer import KafkaProducer
@@ -24,6 +26,8 @@ __all__ = [
     "AUDIT_EVENTS",
     "ANALYTICS_EVENTS",
     "ADMIN_CONFIG_CHANGES",
+    "USER_APPROVAL_EVENTS",
+    "COURSE_APPROVAL_EVENTS",
     "KafkaProducer",
     "KafkaConsumer",
     "LocalEventBus",

@@ -1,0 +1,10 @@
+{
+  "messages": [
+    {"role": "system", "content": "You are an expert AI tutor."},
+    {"role": "user", "content": "What is supervised learning?"}
+  ],
+  "model_tier": "standard",
+  "temperature": 0.7,
+  "max_tokens": 1024,
+  "request_id": "req-fixture-001"
+}

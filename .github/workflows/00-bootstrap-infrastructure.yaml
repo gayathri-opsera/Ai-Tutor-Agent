@@ -27,7 +27,7 @@ jobs:
       aws_account_id: ${{ steps.aws_info.outputs.account_id }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -44,9 +44,9 @@ jobs:
           echo "AWS Account: ${ACCOUNT_ID}"
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.28.0'
+          version: 'v1.34.0'
 
       - name: Check EKS Clusters
         run: |
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -125,9 +125,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.28.0'
+          version: 'v1.34.0'
 
       - name: Connect to Hub Cluster
         run: |
@@ -186,7 +186,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -196,9 +196,14 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.28.0'
+          version: 'v1.34.0'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.17.0'
 
       - name: Connect to Spoke Cluster
         run: |
@@ -209,9 +214,65 @@ jobs:
           kubectl apply -f .opsera-ai-tutor/k8s/overlays/dev/namespace.yaml
           echo "✅ Namespace opsera-ai-tutor-dev ready"
 
-      - name: Create App Secrets from GitHub Secrets (Idempotent)
+      # Install Sealed Secrets controller into kube-system if not already present.
+      # Chart: sealed-secrets v2.16.2 / Controller v0.27.1
+      # https://github.com/bitnami-labs/sealed-secrets
+      # The controller creates a cluster-scoped TLS keypair used to decrypt
+      # SealedSecret CRDs committed to Git and synced by ArgoCD.
+      # This step is idempotent — Helm upgrade --install is safe to re-run.
+      - name: Install Sealed Secrets Controller (Idempotent)
+        run: |
+          SEALED_SECRETS_CHART_VERSION="2.16.2"
+          SEALED_SECRETS_CONTROLLER_VERSION="v0.27.1"
+
+          echo "Checking for Sealed Secrets controller in kube-system..."
+          if helm status sealed-secrets --namespace kube-system &>/dev/null; then
+            INSTALLED_VERSION=$(helm list --namespace kube-system \
+              --filter "sealed-secrets" -o json \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); \
+                print(d[0]['chart'] if d else 'none')" 2>/dev/null || echo "unknown")
+            echo "✅ Sealed Secrets controller already installed: ${INSTALLED_VERSION}"
+            echo "   Desired chart version: ${SEALED_SECRETS_CHART_VERSION}"
+          else
+            echo "Installing Sealed Secrets controller ${SEALED_SECRETS_CONTROLLER_VERSION}..."
+            helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
+            helm repo update
+            helm upgrade --install sealed-secrets sealed-secrets/sealed-secrets \
+              --namespace kube-system \
+              --version "${SEALED_SECRETS_CHART_VERSION}" \
+              --set fullnameOverride=sealed-secrets-controller \
+              --set image.tag="${SEALED_SECRETS_CONTROLLER_VERSION}" \
+              --wait --timeout 120s
+            echo "✅ Sealed Secrets controller ${SEALED_SECRETS_CONTROLLER_VERSION} installed"
+          fi
+
+          echo "Verifying controller pod is running..."
+          kubectl rollout status deployment/sealed-secrets-controller \
+            --namespace kube-system --timeout=120s
+          echo "✅ Sealed Secrets controller ready"
+
+      # DEPRECATION NOTICE — WO-001 (REQ-008 Secrets Management Overhaul)
+      # -----------------------------------------------------------------------
+      # This step creates a plain Kubernetes Secret from GitHub Actions secrets
+      # injected at CI-time. It will be REMOVED once SealedSecret CRDs in
+      # .opsera-ai-tutor/k8s/base/secrets/ai-tutor-sealed-secret.yaml are:
+      #   1. Sealed with kubeseal against the target cluster's public key
+      #   2. Verified operational via ArgoCD sync in the dev environment
+      #
+      # Removal criteria:
+      #   - ArgoCD sync shows ai-tutor-secrets Healthy and Synced
+      #   - kubectl get sealedsecret ai-tutor-secrets -n opsera-ai-tutor-dev returns Ready
+      #   - All pods referencing ai-tutor-secrets restart successfully
+      #
+      # See .opsera-ai-tutor/docs/RUNBOOK-sealed-secrets.md for migration steps.
+      # -----------------------------------------------------------------------
+      - name: "[DEPRECATED] Create App Secrets from GitHub Secrets (Idempotent)"
         run: |
           NAMESPACE="opsera-ai-tutor-dev"
+          # DEPRECATED: This kubectl create secret generic block will be removed
+          # once SealedSecret CRDs are sealed and verified operational.
+          # Replaced by: .opsera-ai-tutor/k8s/base/secrets/ai-tutor-sealed-secret.yaml
+          # managed by the Sealed Secrets controller installed in the step above.
           kubectl create secret generic ai-tutor-secrets \
             --namespace="${NAMESPACE}" \
             --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
@@ -231,7 +292,8 @@ jobs:
             --from-literal=AZURE_OPENAI_API_KEY="${{ secrets.AZURE_OPENAI_API_KEY }}" \
             --from-literal=AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
             --dry-run=client -o yaml | kubectl apply -f -
-          echo "✅ ai-tutor-secrets created/updated in ${NAMESPACE}"
+          echo "⚠️  ai-tutor-secrets created via DEPRECATED kubectl method in ${NAMESPACE}"
+          echo "    Migrate to SealedSecret CRDs per RUNBOOK-sealed-secrets.md"
 
       - name: Setup ArgoCD Application (Idempotent)
         run: |
@@ -253,9 +315,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v5
         with:
-          version: 'v1.28.0'
+          version: 'v1.34.0'
 
       - name: Verify All Components
         run: |
@@ -276,6 +338,18 @@ jobs:
           echo "=== Secrets ==="
           kubectl get secret ai-tutor-secrets -n opsera-ai-tutor-dev \
             -o jsonpath='{.metadata.name}' && echo " ✅ ai-tutor-secrets exists"
+
+          echo "=== Sealed Secrets Controller ==="
+          kubectl get deployment sealed-secrets-controller -n kube-system \
+            -o jsonpath='{.status.readyReplicas}' \
+            && echo "/1 replicas ready ✅" \
+            || echo "⚠️ Sealed Secrets controller not yet deployed"
+
+          echo "=== SealedSecret CRD (if applied) ==="
+          kubectl get sealedsecret ai-tutor-secrets -n opsera-ai-tutor-dev \
+            -o jsonpath='{.metadata.name}' 2>/dev/null \
+            && echo " ✅ ai-tutor-sealed-secret CRD present" \
+            || echo "ℹ️  SealedSecret CRD not yet applied — run kubeseal per RUNBOOK-sealed-secrets.md"
 
           echo ""
           echo "✅ Bootstrap complete — CI/CD pipelines can now deploy to opsera-ai-tutor-dev"

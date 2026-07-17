@@ -1,0 +1,30 @@
+# Development and code-quality dependencies
+# Install with: pip install -r dev-requirements.txt
+#
+# These packages are NOT deployed to production. They are used for:
+#   - Architectural layer enforcement (import-linter, grimp)
+#   - Static analysis and linting
+#   - Pre-commit tooling
+
+# Architectural layer enforcement
+# import-linter: https://import-linter.readthedocs.io/
+# grimp: import graph builder used by import-linter
+import-linter>=2.1.0,<3.0
+grimp>=3.3.0,<4.0
+
+# Static analysis
+# Run from repo root: flake8 services/ libs/
+flake8>=7.0.0,<8.0
+flake8-bugbear>=24.0.0
+
+# Type checking
+# Run from repo root: mypy services/ libs/ --ignore-missing-imports
+mypy>=1.10.0,<2.0
+
+# Security scanning
+# gitleaks, semgrep, checkov, hadolint — installed separately (see RUNBOOK-sealed-secrets.md)
+# detect-secrets for pre-commit secret scanning
+detect-secrets>=1.5.0,<2.0
+
+# Pre-commit hooks
+pre-commit>=3.7.0,<4.0

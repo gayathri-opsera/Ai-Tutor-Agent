@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 import httpx
 
+from embedding import EmbedRequest  # shared contract from libs/contracts (WO-014)
 from src.hybrid_search import hybrid_search
 from src.reranker import reciprocal_rank_fusion
 
@@ -69,7 +70,7 @@ class RAGPipelineService:
         try:
             resp = await client.post(
                 f"{self.embedding_url}/api/internal/embeddings/generate",
-                json={"texts": [text]},
+                json=EmbedRequest(texts=[text]).model_dump(exclude_none=True),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -88,7 +89,7 @@ class RAGPipelineService:
                 batch = texts[start:start + 100]
                 resp = await client.post(
                     f"{self.embedding_url}/api/internal/embeddings/generate",
-                    json={"texts": batch},
+                    json=EmbedRequest(texts=batch).model_dump(exclude_none=True),
                 )
                 resp.raise_for_status()
                 data = resp.json()
