@@ -5,6 +5,7 @@ import logging
 
 import httpx
 
+from rag import RetrieveRequest  # shared contract from libs/contracts (WO-013)
 from src.models import AGENT_REASONING_URL, RAG_SERVICE_URL
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,11 @@ async def _fetch_rag_context(
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
                 f"{RAG_SERVICE_URL}/api/internal/rag/retrieve",
-                json={"query": query, "knowledge_base_id": knowledge_base_id, "top_k": top_k},
+                json=RetrieveRequest(
+                    query=query,
+                    knowledge_base_id=knowledge_base_id,
+                    top_k=top_k,
+                ).model_dump(),
             )
             if resp.is_success:
                 data = resp.json()

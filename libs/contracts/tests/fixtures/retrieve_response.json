@@ -1,0 +1,27 @@
+{
+  "chunks": [
+    {
+      "chunk_id": "c-001",
+      "text": "Gradient descent is an optimization algorithm used to minimize a function by iteratively moving in the direction of steepest descent.",
+      "document_id": "doc-gradient-descent",
+      "document_title": "Introduction to Optimization",
+      "score": 0.94,
+      "metadata": {
+        "page": 12,
+        "knowledge_base_id": "kb-ml-fundamentals-2024"
+      }
+    },
+    {
+      "chunk_id": "c-002",
+      "text": "Stochastic gradient descent (SGD) updates model parameters using a single training example at each step, making it faster but noisier than batch gradient descent.",
+      "document_id": "doc-sgd",
+      "document_title": "Stochastic Methods",
+      "score": 0.87,
+      "metadata": {
+        "page": 4,
+        "knowledge_base_id": "kb-ml-fundamentals-2024"
+      }
+    }
+  ],
+  "query_embedding": [0.012, -0.034, 0.091, 0.003, -0.112]
+}

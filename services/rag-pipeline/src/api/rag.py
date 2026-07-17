@@ -5,47 +5,21 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Request
-from pydantic import BaseModel, Field
+
+# Shared contract models — migrated to libs/contracts (WO-013).
+# Re-exported here for backward compatibility with any code that imports directly
+# from this module (e.g. `from src.api.rag import RetrieveRequest`).
+from rag import (  # noqa: F401 — re-export
+    ChunkResult,
+    IngestChunk,
+    IngestRequest,
+    RetrieveRequest,
+    RetrieveResponse,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class RetrieveRequest(BaseModel):
-    query: str
-    knowledge_base_id: str
-    top_k: int = Field(default=5, ge=1, le=50)
-    filters: dict[str, Any] | None = None
-    use_hybrid: bool = True
-
-
-class ChunkResult(BaseModel):
-    chunk_id: str
-    text: str
-    document_id: str
-    document_title: str
-    score: float
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class RetrieveResponse(BaseModel):
-    chunks: list[ChunkResult]
-    query_embedding: list[float]
-
-
-class IngestChunk(BaseModel):
-    text: str
-    chunk_index: int = 0
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class IngestRequest(BaseModel):
-    document_id: str
-    knowledge_base_id: str
-    document_title: str
-    chunks: list[IngestChunk]
 
 
 router = APIRouter(prefix="/api/internal/rag", tags=["rag"])

@@ -39,6 +39,7 @@ source_roots =
     services/learner-profile
     libs/auth
     libs/cache
+    libs/contracts
     libs/kafka
     libs/logging
     libs/metrics
