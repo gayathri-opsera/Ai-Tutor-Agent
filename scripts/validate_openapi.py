@@ -89,14 +89,14 @@ SERVICES: dict[str, dict] = {
         "service_dir": "services/confidence-grader",
         "app_attr": "create_app",
         "mock_modules": [],
-        "extra_paths": [],
+        "extra_paths": [AUTH_SRC],
         "factory_repo": False,
     },
     "agent-reasoning": {
         "service_dir": "services/agent-reasoning",
         "app_attr": "create_app",
         "mock_modules": ["anthropic", "openai", "aiohttp"],
-        "extra_paths": [],
+        "extra_paths": [AUTH_SRC],
         "factory_repo": False,
     },
     "admin-config": {
@@ -138,7 +138,7 @@ SERVICES: dict[str, dict] = {
         "service_dir": "services/content-management",
         "app_attr": "app",
         "mock_modules": ["asyncpg", "aiokafka"],
-        "extra_paths": [],
+        "extra_paths": [AUTH_SRC],
         "factory_repo": False,
     },
     "learner-profile": {

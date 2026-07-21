@@ -443,6 +443,324 @@
         }
       }
     },
+    "/api/v1/knowledge-bases/admin/pending": {
+      "get": {
+        "tags": [
+          "content-mgmt"
+        ],
+        "summary": "List Pending Kbs",
+        "description": "Admin-only: list all knowledge bases with pending_review status.",
+        "operationId": "list_pending_kbs_api_v1_knowledge_bases_admin_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge-bases/{kb_id}/approval": {
+      "patch": {
+        "tags": [
+          "content-mgmt"
+        ],
+        "summary": "Set Kb Approval",
+        "description": "Admin-only: approve, reject, or request clarification on a course.",
+        "operationId": "set_kb_approval_api_v1_knowledge_bases__kb_id__approval_patch",
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/pending": {
+      "get": {
+        "tags": [
+          "admin-courses"
+        ],
+        "summary": "List Pending Courses",
+        "description": "Return paginated courses awaiting admin approval.",
+        "operationId": "list_pending_courses_api_v1_admin_courses_pending_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingCoursesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/{kb_id}/generate-overview": {
+      "post": {
+        "tags": [
+          "admin-courses"
+        ],
+        "summary": "Generate Overview",
+        "description": "Generate an AI moderation overview for a pending course.",
+        "operationId": "generate_overview_api_v1_admin_courses__kb_id__generate_overview_post",
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Generate Overview Api V1 Admin Courses  Kb Id  Generate Overview Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/{kb_id}/approve": {
+      "post": {
+        "tags": [
+          "admin-courses"
+        ],
+        "summary": "Approve Course",
+        "description": "Approve a pending course \u2014 it becomes visible to learners.",
+        "operationId": "approve_course_api_v1_admin_courses__kb_id__approve_post",
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/{kb_id}/reject": {
+      "post": {
+        "tags": [
+          "admin-courses"
+        ],
+        "summary": "Reject Course",
+        "description": "Reject a pending course with a mandatory reason.",
+        "operationId": "reject_course_api_v1_admin_courses__kb_id__reject_post",
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/courses/{kb_id}/request-clarification": {
+      "post": {
+        "tags": [
+          "admin-courses"
+        ],
+        "summary": "Request Clarification",
+        "description": "Ask the creator to clarify or revise their course submission.",
+        "operationId": "request_clarification_api_v1_admin_courses__kb_id__request_clarification_post",
+        "parameters": [
+          {
+            "name": "kb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Kb Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClarificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -462,6 +780,121 @@
   },
   "components": {
     "schemas": {
+      "ApprovalAction": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "request_clarification"
+            ],
+            "title": "Action"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "ApprovalAction"
+      },
+      "ClarificationRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ClarificationRequest"
+      },
+      "CourseActionResponse": {
+        "properties": {
+          "kb_id": {
+            "type": "string",
+            "title": "Kb Id"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kb_id",
+          "approval_status",
+          "message"
+        ],
+        "title": "CourseActionResponse"
+      },
+      "CourseApprovalItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "organization_id": {
+            "type": "string",
+            "title": "Organization Id"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status"
+          },
+          "ai_overview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Overview"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "organization_id",
+          "approval_status",
+          "ai_overview",
+          "created_at"
+        ],
+        "title": "CourseApprovalItem"
+      },
       "CreateDoc": {
         "properties": {
           "title": {
@@ -494,6 +927,17 @@
             "type": "string",
             "title": "Description",
             "default": ""
+          },
+          "age_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Group"
           }
         },
         "type": "object",
@@ -515,6 +959,50 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "PendingCoursesResponse": {
+        "properties": {
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CourseApprovalItem"
+            },
+            "type": "array",
+            "title": "Courses"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "courses",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PendingCoursesResponse"
+      },
+      "RejectRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RejectRequest"
       },
       "UpdateKB": {
         "properties": {
@@ -539,6 +1027,17 @@
               }
             ],
             "title": "Description"
+          },
+          "age_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Group"
           }
         },
         "type": "object",
