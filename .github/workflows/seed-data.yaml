@@ -47,35 +47,25 @@ jobs:
             -n ${{ env.NAMESPACE }} --timeout=120s
           echo "✅ Postgres is ready"
 
-      - name: Run Alembic Migrations
+      - name: Get Postgres Pod
+        id: pgpod_migrate
         run: |
-          # Delete any previous migration job
-          kubectl delete job db-migrate -n ${{ env.NAMESPACE }} --ignore-not-found
+          POD=$(kubectl get pod -l app=postgres -n ${{ env.NAMESPACE }} \
+            -o jsonpath='{.items[0].metadata.name}')
+          echo "pod=${POD}" >> $GITHUB_OUTPUT
+          echo "Postgres pod: ${POD}"
 
-          # Apply migration job from base manifests
-          kubectl apply -f .opsera-ai-tutor/k8s/base/db-migrate-job.yaml -n ${{ env.NAMESPACE }}
+      - name: Run Schema Migrations
+        run: |
+          echo "Running schema migrations via kubectl exec -i..."
+          kubectl exec -i -n ${{ env.NAMESPACE }} ${{ steps.pgpod_migrate.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -v ON_ERROR_STOP=1 \
+            < services/db/schema/schema.sql
+          echo "✅ Schema migrations complete"
 
-          # Poll for terminal state (complete OR failed) — avoids 5-min hang on crash-loop
-          echo "Waiting for db-migrate job to finish..."
-          for i in $(seq 1 60); do
-            SUCCEEDED=$(kubectl get job db-migrate -n ${{ env.NAMESPACE }} \
-              -o jsonpath='{.status.succeeded}' 2>/dev/null || echo 0)
-            FAILED=$(kubectl get job db-migrate -n ${{ env.NAMESPACE }} \
-              -o jsonpath='{.status.failed}' 2>/dev/null || echo 0)
-            if [ "${SUCCEEDED:-0}" -ge "1" ]; then
-              echo "✅ DB migration job complete"
-              break
-            fi
-            if [ "${FAILED:-0}" -ge "3" ]; then
-              echo "❌ DB migration job failed after retries — dumping logs"
-              kubectl logs -l job-name=db-migrate -n ${{ env.NAMESPACE }} --tail=60
-              exit 1
-            fi
-            echo "  [${i}/60] succeeded=${SUCCEEDED} failed=${FAILED} — waiting 5s..."
-            sleep 5
-          done
-
-          kubectl logs -l job-name=db-migrate -n ${{ env.NAMESPACE }} --tail=40
+          echo "=== Verifying core tables ==="
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod_migrate.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "\dt" | grep -E "roles|users|knowledge_bases|enrollments"
 
   seed-sql:
     name: "02 - Seed SQL Data"
