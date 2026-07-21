@@ -15,14 +15,14 @@ name: "Shared — Architectural Lint"
 on:
   workflow_call:
     inputs:
-
-# Minimal permissions: only read the repo to run the lint check.
-permissions:
-  contents: read
       service_path:
         description: "Relative path to the service directory (e.g. services/llm-gateway)"
         required: true
         type: string
+
+# Minimal permissions: only read the repo to run the lint check.
+permissions:
+  contents: read
 
 jobs:
   architectural-lint:
