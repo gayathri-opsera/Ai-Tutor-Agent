@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { ChatInterface } from './components/ChatInterface';
 import { HomePage } from './pages/Home/HomePage';
 import { LoginPage } from './pages/Login/LoginPage';
+import { RegisterPage } from './pages/Register/RegisterPage';
 import { PendingApprovalPage } from './pages/PendingApproval/PendingApprovalPage';
 import { CourseDetailPage } from './pages/Course/CourseDetailPage';
 import { MyLearningPage } from './pages/MyLearning/MyLearningPage';
@@ -16,6 +17,7 @@ import { AdminConfigPanel } from './pages/AdminConfig/AdminConfigPanel';
 import { AdminMonitoringDashboard } from './pages/AdminMonitoring/AdminMonitoringDashboard';
 import { AdminUsersPage } from './pages/AdminUsers/AdminUsersPage';
 import { AdminDashboardPage } from './pages/AdminDashboard/AdminDashboardPage';
+import { AdminApprovalsPage } from './pages/AdminApprovals/AdminApprovalsPage';
 import { CreatorDashboardPage } from './pages/CreatorDashboard/CreatorDashboardPage';
 import { AssessmentPage } from './pages/Assessment/AssessmentPage';
 
@@ -30,7 +32,12 @@ export default function App() {
     );
   }
 
-  if (!user) return <LoginPage onLogin={login} />;
+  if (!user) return (
+    <Routes>
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="*"         element={<LoginPage onLogin={login} />} />
+    </Routes>
+  );
 
   if (user.approvalStatus === 'pending') return <PendingApprovalPage />;
 
@@ -70,6 +77,7 @@ export default function App() {
             <Route path="/admin/monitoring"  element={<AdminMonitoringDashboard />} />
             <Route path="/admin/users"       element={<AdminUsersPage />} />
             <Route path="/admin/dashboard"   element={<AdminDashboardPage />} />
+            <Route path="/admin/approvals"   element={<AdminApprovalsPage />} />
           </>}
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { CHAT_API, KB_API, RAG_API } from '../config/api';
+import { CHAT_API, KB_API } from '../config/api';
 import { useUser } from '../auth/UserContext';
+import { apiFetch } from '../config/apiFetch';
 
 export interface Message {
   id: string;
@@ -59,12 +60,12 @@ export function ChatInterface() {
   const bottomRef    = useRef<HTMLDivElement>(null);
   const creatingRef  = useRef(false); // guard against double-creation
 
-  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = () => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); };
   useEffect(scrollToBottom, [messages, loading]);
 
   // Fetch available knowledge bases
   useEffect(() => {
-    fetch(KB_API)
+    apiFetch(KB_API)
       .then(r => r.ok ? r.json() : null)
       .then((data: { items?: KnowledgeBase[] } | KnowledgeBase[] | null) => {
         // API returns { items: [...] }; handle both shapes defensively
@@ -85,19 +86,10 @@ export function ChatInterface() {
       });
   }, []);
 
-  // Fetch suggested questions when a knowledge base is selected
+  // Suggested questions come from STARTER_PROMPTS; the /api/internal/rag endpoint
+  // is service-to-service only (requires X-Service-Token) so we don't call it from the browser.
   useEffect(() => {
-    if (!selectedKbId || selectedKbId === '__none__') {
-      setSuggestedQuestions([]);
-      return;
-    }
-    fetch(`${RAG_API}/suggested-questions?knowledge_base_id=${encodeURIComponent(selectedKbId)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { questions?: string[] } | null) => {
-        if (data?.questions?.length) setSuggestedQuestions(data.questions);
-        else setSuggestedQuestions([]);
-      })
-      .catch(() => setSuggestedQuestions([]));
+    setSuggestedQuestions([]);
   }, [selectedKbId]);
 
   // Load saved sessions — server for authenticated users, localStorage IDs for anonymous
@@ -105,7 +97,7 @@ export function ChatInterface() {
     const userId = user?.id;
     if (userId) {
       // Authenticated: load all sessions from the server
-      fetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(userId)}`)
+      apiFetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(userId)}`)
         .then(r => r.ok ? r.json() : { sessions: [] })
         .then((data: { sessions: Session[] }) => {
           if (data.sessions?.length) setSessions(data.sessions);
@@ -117,7 +109,7 @@ export function ChatInterface() {
       if (!ids.length) return;
       Promise.allSettled(
         ids.map(id =>
-          fetch(`${CHAT_API}/sessions/${id}/history`)
+          apiFetch(`${CHAT_API}/sessions/${id}/history`)
             .then(r => r.ok ? r.json().then(() => id) : null)
             .catch(() => null)
         )
@@ -142,7 +134,7 @@ export function ChatInterface() {
     creatingRef.current = true;
     const useKbId = (kbId && kbId !== '__none__') ? kbId : (selectedKbId !== '__none__' ? selectedKbId : undefined);
     try {
-      const resp = await fetch(`${CHAT_API}/sessions`, {
+      const resp = await apiFetch(`${CHAT_API}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user?.id ?? 'demo-user', knowledge_base_id: useKbId || undefined }),
@@ -191,7 +183,7 @@ export function ChatInterface() {
     setMessages([]);
     // Load saved messages from server
     try {
-      const resp = await fetch(`${CHAT_API}/sessions/${s.id}/history`);
+      const resp = await apiFetch(`${CHAT_API}/sessions/${s.id}/history`);
       if (resp.ok) {
         const data: { messages: Array<{ role: string; content: string; sources?: unknown[] }> } = await resp.json();
         if (data.messages?.length) {
@@ -199,7 +191,7 @@ export function ChatInterface() {
             id: crypto.randomUUID(),
             role: m.role as 'user' | 'assistant',
             content: m.content,
-            sources: m.sources as Message['sources'],
+            sources: Array.isArray(m.sources) ? m.sources as Message['sources'] : [],
           })));
         }
       }
@@ -216,7 +208,7 @@ export function ChatInterface() {
     setError(null);
 
     try {
-      const resp = await fetch(`${CHAT_API}/sessions/${activeSession}/messages`, {
+      const resp = await apiFetch(`${CHAT_API}/sessions/${activeSession}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ content, knowledge_base_id: (selectedKbId && selectedKbId !== '__none__') ? selectedKbId : undefined }),
@@ -246,7 +238,7 @@ export function ChatInterface() {
                   msg.id === assistantId ? { ...msg, content: assistantContent } : msg
                 ));
               }
-              if (data.sources) sources.push(...(data.sources as Message['sources'] ?? []));
+              if (data.sources && Array.isArray(data.sources)) sources.push(...(data.sources as Message['sources'] ?? []));
               if (data.source_type) source_type = data.source_type;
               if (data.confidence_score !== undefined) confidence = data.confidence_score;
             } catch { /* ignore SSE parse errors */ }
@@ -275,7 +267,7 @@ export function ChatInterface() {
   // After first message, sync the auto-generated title from the server
   const syncTitle = useCallback(async (sessionId: string) => {
     try {
-      const r = await fetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(user?.id ?? 'demo-user')}`);
+      const r = await apiFetch(`${CHAT_API}/sessions?user_id=${encodeURIComponent(user?.id ?? 'demo-user')}`);
       if (!r.ok) return;
       const data: { sessions: Session[] } = await r.json();
       const updated = data.sessions.find(s => s.id === sessionId);
@@ -295,7 +287,7 @@ export function ChatInterface() {
     if (sessionId === activeSession) setActiveTitle(title);
     localStorage.setItem(`session_title_${sessionId}`, JSON.stringify(title));
     // Persist to server
-    await fetch(`${CHAT_API}/sessions/${sessionId}`, {
+    await apiFetch(`${CHAT_API}/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title }),
@@ -305,7 +297,7 @@ export function ChatInterface() {
   const deleteSession = useCallback(async (sessionId: string) => {
     setDeletingId(sessionId);
     try {
-      await fetch(`${CHAT_API}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+      await apiFetch(`${CHAT_API}/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
       setSessions(s => s.filter(x => x.id !== sessionId));
       if (activeSession === sessionId) {
         setActiveSession(null);
@@ -321,7 +313,7 @@ export function ChatInterface() {
   const rateMessage = (id: string, rating: 'up' | 'down') => {
     setMessages(msgs => msgs.map(m => m.id === id ? { ...m, rating } : m));
     // Track rating in analytics
-    fetch('/api/v1/analytics/events', {
+    apiFetch('/api/v1/analytics/events', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event_type: 'answer.rated',
@@ -462,22 +454,31 @@ export function ChatInterface() {
         <div className="chat-topbar">
           <div>
             <p className="chat-topbar-title">{activeTitle}</p>
-            {/* Knowledge base selector */}
-            {knowledgeBases.length > 0 ? (
-              <select
-                value={selectedKbId}
-                onChange={e => setSelectedKbId(e.target.value)}
-                style={{ fontSize: '0.8rem', background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', outline: 'none' }}
-                title="Select knowledge base for RAG"
-              >
-                <option value="">🌐 All knowledge (no RAG filter)</option>
-                {knowledgeBases.map(kb => (
-                  <option key={kb.id} value={kb.id}>📚 {kb.name}</option>
-                ))}
-              </select>
-            ) : (
-              <p className="chat-topbar-meta">Loading knowledge bases…</p>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, flexWrap: 'wrap' }}>
+              {/* User context pill */}
+              <span style={{ fontSize: '0.75rem', color: '#a78bfa', fontWeight: 500 }}>
+                👤 {user?.name ?? 'Guest'}
+              </span>
+              <span style={{ color: '#444', fontSize: '0.7rem' }}>·</span>
+              {/* KB selector inline */}
+              {knowledgeBases.length > 0 ? (
+                <select
+                  value={selectedKbId}
+                  onChange={e => setSelectedKbId(e.target.value)}
+                  style={{ fontSize: '0.75rem', background: 'transparent', border: 'none',
+                           color: selectedKbId && selectedKbId !== '__none__' ? '#67e8f9' : 'var(--muted)',
+                           cursor: 'pointer', outline: 'none', fontWeight: 500 }}
+                  title="Select knowledge base for RAG"
+                >
+                  <option value="">🌐 All knowledge (no RAG filter)</option>
+                  {knowledgeBases.map(kb => (
+                    <option key={kb.id} value={kb.id}>📚 {kb.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Loading courses…</span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <span className="badge badge-success">● AI Active</span>
@@ -501,6 +502,21 @@ export function ChatInterface() {
                 {m.role === 'user' ? (user?.avatar ?? '👤') : '🤖'}
               </div>
               <div style={{ maxWidth: '72%' }}>
+                {/* Sender name + course context label */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3,
+                              justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 600,
+                                 color: m.role === 'user' ? '#a78bfa' : '#67e8f9' }}>
+                    {m.role === 'user' ? (user?.name ?? 'You') : 'AI Tutor'}
+                  </span>
+                  {m.role === 'user' && selectedKbName && (
+                    <span style={{ fontSize: '0.65rem', background: 'rgba(103,232,249,0.12)',
+                                   color: '#67e8f9', border: '1px solid rgba(103,232,249,0.25)',
+                                   borderRadius: 10, padding: '1px 6px' }}>
+                      📚 {selectedKbName}
+                    </span>
+                  )}
+                </div>
                 <div className={`chat-bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
                   <ReactMarkdown>{m.content || '…'}</ReactMarkdown>
                 </div>

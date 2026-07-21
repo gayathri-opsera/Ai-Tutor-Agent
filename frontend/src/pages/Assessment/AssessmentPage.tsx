@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useUser } from '../../auth/UserContext';
 import { KB_API } from '../../config/api';
+import { apiFetch } from '../../config/apiFetch';
 
 const ASSESSMENT_API = '/api/v1/assessments';
 const LEARNER_API    = '/api/v1/learner';
@@ -52,23 +53,25 @@ interface Comparison {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function fetchOrSeedAssessment(kbId: string, kbName: string): Promise<Assessment> {
-  const listResp = await fetch(`${ASSESSMENT_API}?knowledge_base_id=${kbId}`);
-  const { items } = await listResp.json() as { items: { id: string; assessment_type: string }[] };
+  const listResp = await apiFetch(`${ASSESSMENT_API}?knowledge_base_id=${kbId}`);
+  const listData = listResp.ok ? await listResp.json() as { items?: { id: string; assessment_type: string }[] } : {};
+  const items = Array.isArray(listData?.items) ? listData.items : [];
 
   // Use existing assessment if it has real questions (not the old generic placeholder seed)
   if (items.length > 0) {
-    const takeResp = await fetch(`${ASSESSMENT_API}/${items[0].id}/take`);
-    const existing = await takeResp.json() as Assessment;
-    const isGenericSeed = existing.questions?.some(q =>
-      q.text.includes('What is the main topic covered') ||
-      q.text.includes('What type of assessment is this')
+    const takeResp = await apiFetch(`${ASSESSMENT_API}/${items[0].id}/take`);
+    const existing = takeResp.ok ? await takeResp.json() as Assessment : null;
+    const questions = existing?.questions ?? [];
+    const isGenericSeed = questions.some(q =>
+      q.text?.includes('What is the main topic covered') ||
+      q.text?.includes('What type of assessment is this')
     );
-    if (!isGenericSeed) return existing;
+    if (!isGenericSeed && questions.length > 0) return existing!;
     // Generic seed detected — fall through to AI generation below
   }
 
   // Generate KB-specific questions using the AI
-  const genResp = await fetch(`${ASSESSMENT_API}/generate`, {
+  const genResp = await apiFetch(`${ASSESSMENT_API}/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -81,12 +84,12 @@ async function fetchOrSeedAssessment(kbId: string, kbName: string): Promise<Asse
 
   if (genResp.ok) {
     const generated = await genResp.json() as { id: string };
-    const takeResp = await fetch(`${ASSESSMENT_API}/${generated.id}/take`);
+    const takeResp = await apiFetch(`${ASSESSMENT_API}/${generated.id}/take`);
     return takeResp.json();
   }
 
   // Fallback: create a minimal self-assessment if AI generation fails
-  const created = await fetch(ASSESSMENT_API, {
+  const created = await apiFetch(ASSESSMENT_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -119,7 +122,7 @@ async function fetchOrSeedAssessment(kbId: string, kbName: string): Promise<Asse
     }),
   }).then(r => r.json()) as { id: string };
 
-  const takeResp = await fetch(`${ASSESSMENT_API}/${created.id}/take`);
+  const takeResp = await apiFetch(`${ASSESSMENT_API}/${created.id}/take`);
   return takeResp.json();
 }
 
@@ -194,14 +197,14 @@ export function AssessmentPage() {
     const load = async () => {
       try {
         const [kbData, assess] = await Promise.all([
-          fetch(`${KB_API}/${kbId}`).then(r => r.ok ? r.json() : null),
+          apiFetch(`${KB_API}/${kbId}`).then(r => r.ok ? r.json() : null),
           fetchOrSeedAssessment(kbId, 'Knowledge Base'),
         ]);
         if (kbData?.name) setKbName(kbData.name);
         setAssessment(assess);
 
         // Load pre/post comparison for this user+KB
-        const cmpResp = await fetch(
+        const cmpResp = await apiFetch(
           `${ASSESSMENT_API}/compare/${userId}?knowledge_base_id=${kbId}`
         );
         if (cmpResp.ok) setComparison(await cmpResp.json());
@@ -219,7 +222,8 @@ export function AssessmentPage() {
 
   const handleSubmit = async () => {
     if (!assessment) return;
-    const unanswered = assessment.questions.filter(q => answers[q.id] === undefined);
+    const questions = assessment.questions ?? [];
+    const unanswered = questions.filter(q => answers[q.id] === undefined);
     if (unanswered.length > 0) {
       alert(`Please answer all questions (${unanswered.length} remaining)`);
       return;
@@ -227,7 +231,7 @@ export function AssessmentPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${ASSESSMENT_API}/${assessment.id}/submit`, {
+      const res = await apiFetch(`${ASSESSMENT_API}/${assessment.id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, answers }),
@@ -237,7 +241,7 @@ export function AssessmentPage() {
       setShowFeedback(false);
 
       // Update learner profile with topic progress
-      await fetch(`${LEARNER_API}/topic?user_id=${userId}`, {
+      await apiFetch(`${LEARNER_API}/topic?user_id=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,7 +253,7 @@ export function AssessmentPage() {
       }).catch(() => {});
 
       // Refresh comparison banner
-      const cmpResp = await fetch(
+      const cmpResp = await apiFetch(
         `${ASSESSMENT_API}/compare/${userId}?knowledge_base_id=${kbId}`
       );
       if (cmpResp.ok) setComparison(await cmpResp.json());
@@ -265,7 +269,7 @@ export function AssessmentPage() {
     setGenerating(true);
     setError('');
     try {
-      const res = await fetch(`${ASSESSMENT_API}/generate`, {
+      const res = await apiFetch(`${ASSESSMENT_API}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -283,7 +287,7 @@ export function AssessmentPage() {
       }
       const data = await res.json();
       // Load the new assessment via /take for safety
-      const takeResp = await fetch(`${ASSESSMENT_API}/${data.id}/take`);
+      const takeResp = await apiFetch(`${ASSESSMENT_API}/${data.id}/take`);
       setAssessment(await takeResp.json());
       setAnswers({});
       setResult(null);
@@ -447,14 +451,14 @@ export function AssessmentPage() {
         </div>
 
         {/* Questions */}
-        {assessment?.questions.map((q, qi) => (
+        {(assessment?.questions ?? []).map((q, qi) => (
           <div key={q.id} className="table-wrap" style={{ padding: 24, marginBottom: 20 }}>
             <p style={{ fontWeight: 600, marginBottom: 16 }}>
               <span style={{ color: 'var(--brand)', marginRight: 8 }}>Q{qi + 1}.</span>
               {q.text}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {q.options.map((opt, oi) => {
+              {(q.options ?? []).map((opt, oi) => {
                 const selected = answers[q.id] === oi;
                 return (
                   <label key={oi} style={{

@@ -35,12 +35,41 @@ function fromAuthUser(u: AuthUser): AppUser {
   };
 }
 
+/**
+ * Register (or re-register) the authenticated user on the backend and return
+ * their current approval_status.  Safe to call on every login — the endpoint
+ * is idempotent.  Returns 'approved' as a safe default on any network error so
+ * mock-auth users (whose tokens are not real JWTs) are never gated.
+ */
+async function fetchApprovalStatus(user: AppUser, token: string): Promise<'pending' | 'approved' | 'rejected'> {
+  // Mock tokens are not real JWTs — skip the backend call; mock users are pre-seeded as approved.
+  if (!token || token.startsWith('mock-jwt')) return 'approved';
+
+  try {
+    const resp = await fetch('/api/v1/auth/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ email: user.email, full_name: user.name }),
+    });
+    if (resp.ok) {
+      const data = await resp.json() as { approval_status?: string };
+      return (data.approval_status ?? 'approved') as 'pending' | 'approved' | 'rejected';
+    }
+  } catch {
+    // Network unavailable (e.g. admin-config not running) — fail open
+  }
+  return 'approved';
+}
+
 // ── Context ───────────────────────────────────────────────────────────────────
 
 interface UserContextValue {
   user:         AppUser | null;
   initializing: boolean;
-  login:        () => Promise<void>;
+  login:        (email: string, password: string) => Promise<void>;
   logout:       () => Promise<void>;
   /** @deprecated — kept for backward compatibility during migration. */
   switchUser:   (u: AppUser) => void;
@@ -63,16 +92,29 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
-    authService.init().then(authUser => {
-      if (authUser) setUser(fromAuthUser(authUser));
+    authService.init().then(async authUser => {
+      if (authUser) {
+        const appUser = fromAuthUser(authUser);
+        const token = await authService.getToken();
+        appUser.approvalStatus = await fetchApprovalStatus(appUser, token);
+        setUser(appUser);
+      }
     }).catch(err => {
       console.error('[UserContext] Keycloak init failed:', err);
     }).finally(() => setInitializing(false));
   }, []);
 
-  const login = useCallback(async () => {
-    await authService.login();
-    // After redirect, init() will re-run on page load.
+  const login = useCallback(async (email: string, password: string) => {
+    await authService.login(email, password);
+    // For real Keycloak a page redirect happens and init() re-runs on reload.
+    // For mock/dev mode login() returns immediately — re-initialize here to update state.
+    const authUser = await authService.init();
+    if (authUser) {
+      const appUser = fromAuthUser(authUser);
+      const token = await authService.getToken();
+      appUser.approvalStatus = await fetchApprovalStatus(appUser, token);
+      setUser(appUser);
+    }
   }, []);
 
   const logout = useCallback(async () => {

@@ -2,12 +2,12 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CourseCard } from '../../components/CourseCard';
 import { KB_API } from '../../config/api';
+import { apiFetch } from '../../config/apiFetch';
 import { useUser } from '../../auth/UserContext';
 
 interface KB { id: string; name: string; description: string; is_active: boolean; doc_count?: number; }
 
 const EMOJIS  = ['📚', '🤖', '🧠', '💡', '🔬', '🎯', '⚡', '🌐'];
-const RATINGS = [4.7, 4.5, 4.8, 4.3, 4.6, 4.9];
 
 const FALLBACK_KBS: KB[] = [
   { id: 'bbbbbbbb-0001-0000-0000-000000000001', name: 'Python Fundamentals', description: 'Core Python programming: variables, functions, OOP, and async patterns.', is_active: true },
@@ -69,7 +69,7 @@ function EditKBModal({ kb, onClose, onSave }: {
     if (!name.trim()) { setError('Name is required.'); return; }
     setSaving(true); setError('');
     try {
-      const resp = await fetch(`${KB_API}/${kb.id}`, {
+      const resp = await apiFetch(`${KB_API}/${kb.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), description: desc.trim() }),
@@ -130,7 +130,7 @@ function CreateKBModal({ onClose, onCreate }: {
     if (!name.trim()) { setError('Please enter a name for your knowledge base.'); return; }
     setSaving(true); setError('');
     try {
-      const resp = await fetch(KB_API, {
+      const resp = await apiFetch(KB_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), description: desc.trim(), organization_id: 'default' }),
@@ -229,19 +229,26 @@ export function KnowledgeBaseList() {
   const navigate                    = useNavigate();
   const { user }                    = useUser();
 
+  // Enrollment state
+  const [enrolledIds, setEnrolledIds]     = useState<Set<string>>(new Set());
+  const [enrollingId, setEnrollingId]     = useState<string | null>(null);
+
   const searchQuery = searchParams.get('q')?.toLowerCase() ?? '';
-  const canManage   = user?.role === 'Creator' || user?.role === 'Admin';
+  const canManage   = user?.isCreator === true || user?.isAdmin === true;
+  const isLearner   = !canManage; // learners see enroll/unenroll
+
+  const userId = user?.id ?? 'demo-user';
 
   const loadKbs = async () => {
     try {
       // Always fetch with include_archived so the filter can work client-side
-      const r = await fetch(`${KB_API}?organization_id=default&include_archived=true`);
-      const d = await r.json();
-      const items: KB[] = d.items ?? d ?? [];
+      const r = await apiFetch(`${KB_API}?organization_id=default&include_archived=true`);
+      const d = r.ok ? await r.json() : {};
+      const items: KB[] = Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : [];
       // Enrich each KB with doc count
       const enriched = await Promise.all(items.map(async kb => {
         try {
-          const dr = await fetch(`${KB_API}/${kb.id}/documents`);
+          const dr = await apiFetch(`${KB_API}/${kb.id}/documents`);
           const dd = await dr.json();
           return { ...kb, doc_count: (dd.items ?? []).length };
         } catch { return kb; }
@@ -252,13 +259,43 @@ export function KnowledgeBaseList() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { loadKbs(); }, []);
+  const loadEnrollments = async () => {
+    try {
+      const r = await apiFetch(`/api/v1/learner/enrollments?user_id=${encodeURIComponent(userId)}`);
+      if (r.ok) {
+        const d = await r.json();
+        setEnrolledIds(new Set(d.enrolled_kb_ids ?? []));
+      }
+    } catch { /* ignore — enrollment is optional */ }
+  };
+
+  useEffect(() => { loadKbs(); loadEnrollments(); }, []);
+
+  const toggleEnroll = async (kb: KB, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEnrollingId(kb.id);
+    const isEnrolled = enrolledIds.has(kb.id);
+    try {
+      if (isEnrolled) {
+        await apiFetch(`/api/v1/learner/enroll/${kb.id}?user_id=${encodeURIComponent(userId)}`, { method: 'DELETE' });
+        setEnrolledIds(prev => { const s = new Set(prev); s.delete(kb.id); return s; });
+      } else {
+        await apiFetch(`/api/v1/learner/enroll?user_id=${encodeURIComponent(userId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kb_id: kb.id }),
+        });
+        setEnrolledIds(prev => new Set([...prev, kb.id]));
+      }
+    } catch { /* best-effort */ }
+    finally { setEnrollingId(null); }
+  };
 
   const handleArchive = async (kb: KB) => {
     setMenuOpen(null);
     const endpoint = kb.is_active ? `${KB_API}/${kb.id}/archive` : `${KB_API}/${kb.id}/unarchive`;
     try {
-      const resp = await fetch(endpoint, { method: 'POST' });
+      const resp = await apiFetch(endpoint, { method: 'POST' });
       if (!resp.ok) throw new Error(`${resp.status}`);
       setKbs(prev => prev.map(k => k.id === kb.id ? { ...k, is_active: !kb.is_active } : k));
     } catch { alert('Failed to update course. Please try again.'); }
@@ -274,7 +311,7 @@ export function KnowledgeBaseList() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const resp = await fetch(`${KB_API}/${deleteTarget.id}`, { method: 'DELETE' });
+      const resp = await apiFetch(`${KB_API}/${deleteTarget.id}`, { method: 'DELETE' });
       if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
       setKbs(prev => prev.filter(k => k.id !== deleteTarget.id));
       setDeleteTarget(null);
@@ -448,10 +485,28 @@ export function KnowledgeBaseList() {
                     description={kb.description}
                     emoji={EMOJIS[i % EMOJIS.length]}
                     docCount={kb.doc_count ?? 0}
-                    rating={RATINGS[i % RATINGS.length]}
-                    ratingCount={800 + i * 320}
                     tag={kb.is_active ? 'Active' : 'Archived'}
                   />
+                  {/* Enroll / Unenroll button — shown for learners on active courses */}
+                  {isLearner && kb.is_active && (
+                    <div style={{ position: 'absolute', bottom: 46, right: 12, zIndex: 5 }}
+                      onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={e => toggleEnroll(kb, e)}
+                        disabled={enrollingId === kb.id}
+                        style={{
+                          padding: '5px 14px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700,
+                          cursor: enrollingId === kb.id ? 'wait' : 'pointer', border: '2px solid',
+                          background:    enrolledIds.has(kb.id) ? '#d1fae5' : '#a435f0',
+                          color:         enrolledIds.has(kb.id) ? '#065f46' : '#fff',
+                          borderColor:   enrolledIds.has(kb.id) ? '#6ee7b7' : '#a435f0',
+                          transition:    'all 0.15s',
+                        }}
+                      >
+                        {enrollingId === kb.id ? '…' : enrolledIds.has(kb.id) ? '✓ Enrolled' : '+ Enroll'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
 

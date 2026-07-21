@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KB_API } from '../../config/api';
 import { useUser } from '../../auth/UserContext';
+import { apiFetch } from '../../config/apiFetch';
 
 const AGE_GROUPS = [
   { value: '', label: '— Any age —' },
@@ -44,6 +45,7 @@ export function CreatorCourseManagement() {
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
   const [actionMsg, setActionMsg]     = useState<string | null>(null);
+  const [newlyCreatedKb, setNewlyCreatedKb] = useState<KB | null>(null);
   const [showCreate, setShowCreate]   = useState(false);
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [form, setForm]               = useState<FormState>(EMPTY_FORM);
@@ -55,7 +57,7 @@ export function CreatorCourseManagement() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${KB_API}?organization_id=default&include_archived=false`);
+      const res = await apiFetch(`${KB_API}?organization_id=default&include_archived=false`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setCourses(data.items ?? []);
@@ -75,7 +77,7 @@ export function CreatorCourseManagement() {
     if (!form.name.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch(KB_API, {
+      const res = await apiFetch(KB_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -86,6 +88,8 @@ export function CreatorCourseManagement() {
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const created: KB = await res.json();
+      setNewlyCreatedKb(created);
       setActionMsg('Course created successfully');
       setShowCreate(false);
       setForm(EMPTY_FORM);
@@ -105,7 +109,7 @@ export function CreatorCourseManagement() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${KB_API}/${editingId}`, {
+      const res = await apiFetch(`${KB_API}/${editingId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -246,9 +250,21 @@ export function CreatorCourseManagement() {
       )}
       {actionMsg && (
         <div style={{ background: '#d1fae5', color: '#065f46', padding: '0.75rem 1rem',
-                      borderRadius: 6, marginBottom: '1rem' }}>
-          {actionMsg} <button onClick={() => setActionMsg(null)} style={{ marginLeft: 8,
+                      borderRadius: 6, marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <span>{actionMsg}</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {newlyCreatedKb && (
+              <button
+                onClick={() => navigate(`/content/upload?kb=${newlyCreatedKb.id}&kbName=${encodeURIComponent(newlyCreatedKb.name)}`)}
+                style={{ background: '#a435f0', color: '#fff', border: 'none',
+                         padding: '6px 16px', borderRadius: 6, cursor: 'pointer',
+                         fontWeight: 700, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                ⬆️ Upload Content Now
+              </button>
+            )}
+            <button onClick={() => { setActionMsg(null); setNewlyCreatedKb(null); }} style={{ marginLeft: 4,
                       background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>✕</button>
+          </div>
         </div>
       )}
 
@@ -299,8 +315,7 @@ export function CreatorCourseManagement() {
                        padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}>
               Cancel
             </button>
-          </div>
-        </div>
+          </div>        </div>
       )}
 
       {loading ? <p>Loading…</p> : (

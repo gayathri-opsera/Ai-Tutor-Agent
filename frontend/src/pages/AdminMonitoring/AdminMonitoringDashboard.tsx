@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
+import { apiFetch } from '../../config/apiFetch';
 
 const ANALYTICS_API = '/api/v1/analytics';
 
@@ -31,11 +32,10 @@ interface AnalyticsSummary {
 interface AdminDashboard {
   total_learners: number;
   total_courses: number;
-  active_courses: number;
-  platform_completion_rate: number;
+  total_documents: number;
+  total_chat_sessions: number;
   approval_status_distribution: Record<string, number>;
-  document_status_breakdown?: Record<string, number>;
-  top_courses_by_enrollment: { name: string; enrolled: number; completion_rate: number }[];
+  top_courses_by_enrollment: { title: string; enrollments: number }[];
 }
 
 function StatCard({ emoji, title, value, sub, accent }: {
@@ -58,8 +58,8 @@ export function AdminMonitoringDashboard() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${ANALYTICS_API}/summary`).then(r => r.ok ? r.json() : null),
-      fetch(`${ANALYTICS_API}/admin/dashboard`).then(r => r.ok ? r.json() : null),
+      apiFetch(`${ANALYTICS_API}/summary`).then(r => r.ok ? r.json() : null),
+      apiFetch(`${ANALYTICS_API}/admin/dashboard`).then(r => r.ok ? r.json() : null),
     ]).then(([s, a]) => {
       if (s) setSummary(s);
       if (a) setAdminData(a);
@@ -73,9 +73,8 @@ export function AdminMonitoringDashboard() {
 
   const recentEvents = summary?.recent_events?.slice(0, 8) ?? [];
 
-  // Document status pie data — prefer dedicated field, fall back to approval distribution
   const docStatusData = Object.entries(
-    adminData?.document_status_breakdown ?? adminData?.approval_status_distribution ?? {}
+    adminData?.approval_status_distribution ?? {}
   ).map(([status, count]) => ({ name: status, value: count }));
 
   const topCourses = adminData?.top_courses_by_enrollment ?? [];
@@ -105,12 +104,12 @@ export function AdminMonitoringDashboard() {
             <StatCard emoji="📚" title="Total Courses"
               value={loading ? '…' : String(adminData?.total_courses ?? 0)}
               accent="#0ea5e9" />
-            <StatCard emoji="✅" title="Active Courses"
-              value={loading ? '…' : String(adminData?.active_courses ?? 0)}
+            <StatCard emoji="📄" title="Total Documents"
+              value={loading ? '…' : String(adminData?.total_documents ?? 0)}
               accent="#10b981" />
-            <StatCard emoji="📈" title="Platform Completion"
-              value={loading ? '…' : `${adminData?.platform_completion_rate ?? 0}%`}
-              sub="across all learners" accent="#f59e0b" />
+            <StatCard emoji="💬" title="Chat Sessions"
+              value={loading ? '…' : String(adminData?.total_chat_sessions ?? 0)}
+              sub="all time" accent="#f59e0b" />
           </div>
 
           {/* Charts row: document status pie + top topics bar */}
@@ -168,17 +167,13 @@ export function AdminMonitoringDashboard() {
                   <tr style={{ background: '#f9fafb' }}>
                     <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Course</th>
                     <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Enrolled</th>
-                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '0.72rem', color: '#6b7280', fontWeight: 600 }}>Completion</th>
                   </tr>
                 </thead>
                 <tbody>
                   {topCourses.slice(0, 10).map((c, i) => (
                     <tr key={i} style={{ borderTop: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '6px 8px', fontWeight: 500 }}>{c.name}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#7c3aed', fontWeight: 600 }}>{c.enrolled}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#10b981' }}>
-                        {Math.round(c.completion_rate * 100)}%
-                      </td>
+                      <td style={{ padding: '6px 8px', fontWeight: 500 }}>{c.title}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#7c3aed', fontWeight: 600 }}>{c.enrollments}</td>
                     </tr>
                   ))}
                 </tbody>

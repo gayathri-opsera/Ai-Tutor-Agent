@@ -8,25 +8,12 @@ interface CourseCardProps {
   progress?: number;          // 0–100
   tag?: string;
   emoji?: string;
-  rating?: number;            // 0–5
-  ratingCount?: number;
   onClick?: () => void;
-}
-
-function Stars({ rating }: { rating: number }) {
-  return (
-    <div className="stars" aria-label={`Rating: ${rating} out of 5`}>
-      {[1, 2, 3, 4, 5].map(i => (
-        <span key={i} className={`star${i <= Math.round(rating) ? '' : ' empty'}`}>★</span>
-      ))}
-    </div>
-  );
 }
 
 export function CourseCard({
   id, name, description, docCount = 0, progress,
   tag = 'Knowledge Base', emoji = '📚',
-  rating = 4.5, ratingCount = 0,
   onClick,
 }: CourseCardProps) {
   const navigate = useNavigate();
@@ -51,15 +38,6 @@ export function CourseCard({
             {description}
           </p>
         )}
-
-        {/* Rating */}
-        <div className="course-rating">
-          <span className="course-rating-score">{rating.toFixed(1)}</span>
-          <Stars rating={rating} />
-          {ratingCount > 0 && (
-            <span className="course-rating-count">({ratingCount.toLocaleString()})</span>
-          )}
-        </div>
 
         {/* Tags */}
         <div className="course-meta">

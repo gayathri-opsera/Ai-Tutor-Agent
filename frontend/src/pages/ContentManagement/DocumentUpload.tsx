@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KB_API, CONTENT_API } from '../../config/api';
+import { apiFetch } from '../../config/apiFetch';
 
 type FileStatus = 'pending' | 'uploading' | 'success' | 'error';
 interface FileEntry {
@@ -51,21 +52,36 @@ export function DocumentUpload() {
   const preselectedKbName = searchParams.get('kbName');
 
   /* ── Load KBs ─────────────────────────────────────────────────────────────── */
-  useEffect(() => {
-    fetch(`${KB_API}?organization_id=default`)
-      .then(r => r.json())
-      .then(d => {
-        const list: KB[] = d.items ?? d ?? [];
-        setKbs(list.length > 0 ? list : FALLBACK_KBS);
-        const preselect = searchParams.get('kb');
-        setSelectedKb(preselect ?? list[0]?.id ?? FALLBACK_KBS[0].id);
+  const loadKbs = () => {
+    const preselect = searchParams.get('kb');
+    apiFetch(`${KB_API}?organization_id=default`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(async (d) => {
+        const list: KB[] = Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : [];
+        const base = list.length > 0 ? list : FALLBACK_KBS;
+        // If a specific KB is pre-selected (e.g. newly created) and not in the list,
+        // fetch it individually so it always appears as an option.
+        if (preselect && !base.find(k => k.id === preselect)) {
+          try {
+            const r2 = await apiFetch(`${KB_API}/${preselect}`);
+            if (r2.ok) {
+              const kb: KB = await r2.json();
+              setKbs([kb, ...base]);
+              setSelectedKb(preselect);
+              return;
+            }
+          } catch { /* ignore, fall through */ }
+        }
+        setKbs(base);
+        setSelectedKb(prev => prev || preselect || base[0]?.id || FALLBACK_KBS[0].id);
       })
       .catch(() => {
         setKbs(FALLBACK_KBS);
-        const preselect = searchParams.get('kb');
-        setSelectedKb(preselect ?? FALLBACK_KBS[0].id);
+        setSelectedKb(prev => prev || preselect || FALLBACK_KBS[0].id);
       });
-  }, []);
+  };
+
+  useEffect(() => { loadKbs(); }, []);
 
   /* ── Add files (dedup by name) ────────────────────────────────────────────── */
   const addFiles = (incoming: FileList | File[]) => {
@@ -94,7 +110,7 @@ export function DocumentUpload() {
     if (!newKbName.trim()) return;
     setCreatingKb(true);
     try {
-      const resp = await fetch(KB_API, {
+      const resp = await apiFetch(KB_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newKbName.trim(), description: newKbDesc.trim(), organization_id: 'default' }),
@@ -105,6 +121,8 @@ export function DocumentUpload() {
       setNewKbMode(false);
       setNewKbName('');
       setNewKbDesc('');
+      // Kick off re-index so any existing content is immediately searchable.
+      if (resp.ok) apiFetch(`${CONTENT_API}/reindex-kb/${kb.id}`, { method: 'POST' }).catch(() => {});
     } catch {
       const kb: KB = { id: `local-${Date.now()}`, name: newKbName.trim() };
       setKbs(prev => [...prev, kb]);
@@ -124,7 +142,7 @@ export function DocumentUpload() {
       setUploading(true);
       setUrlError('');
       try {
-        const resp = await fetch(`${CONTENT_API}/ingest/url`, {
+        const resp = await apiFetch(`${CONTENT_API}/ingest/url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: url.trim(), knowledge_base_id: selectedKb }),
@@ -133,6 +151,8 @@ export function DocumentUpload() {
           const err = await resp.json().catch(() => ({}));
           setUrlError(err.detail ?? err.message ?? `Server error (${resp.status})`);
         } else {
+          // Kick off background re-index for the KB.
+          apiFetch(`${CONTENT_API}/reindex-kb/${selectedKb}`, { method: 'POST' }).catch(() => {});
           setAllDone(true);
         }
       } catch (err) {
@@ -156,7 +176,7 @@ export function DocumentUpload() {
         const fd = new FormData();
         fd.append('file', entry.file);
         fd.append('knowledge_base_id', selectedKb);
-        const resp = await fetch(`${CONTENT_API}/upload`, { method: 'POST', body: fd });
+        const resp = await apiFetch(`${CONTENT_API}/upload`, { method: 'POST', body: fd });
 
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
@@ -171,6 +191,9 @@ export function DocumentUpload() {
               ? { ...e, status: 'success', docId: data.id ?? data.document_id }
               : e
           ));
+          // Kick off a re-index for the KB so RAG finds the new content immediately.
+          // Fire-and-forget; errors are non-critical.
+          apiFetch(`${CONTENT_API}/reindex-kb/${selectedKb}`, { method: 'POST' }).catch(() => {});
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Network error';
@@ -392,6 +415,10 @@ export function DocumentUpload() {
                   value={selectedKb} onChange={e => setSelectedKb(e.target.value)}>
                   {kbs.map(kb => <option key={kb.id} value={kb.id}>{kb.name}</option>)}
                 </select>
+                <button type="button" className="btn btn-outline btn-sm"
+                  onClick={loadKbs} title="Refresh course list" style={{ whiteSpace: 'nowrap' }}>
+                  ↻
+                </button>
                 <button type="button" className="btn btn-outline btn-sm"
                   onClick={() => setNewKbMode(true)} style={{ whiteSpace: 'nowrap' }}>
                   ✚ New KB

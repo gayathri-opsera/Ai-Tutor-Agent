@@ -3,11 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { CHAT_API, KB_API, CONTENT_API } from '../../config/api';
 import { useUser } from '../../auth/UserContext';
+import { apiFetch } from '../../config/apiFetch';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 interface KnowledgeBase { id: string; name: string; description: string; is_active?: boolean; }
 interface Document      { id: string; title: string; status: string; chunk_count: number; content_type: string; }
 interface Message       { id: string; role: 'user' | 'assistant'; content: string; sources?: { chunk_id: string; document_title: string }[]; }
+
+function decodeTitle(raw: string): string {
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
 
 const EMOJIS: Record<string, string> = { pdf: '📕', docx: '📘', text: '📄', url: '🌐', mp4: '🎬', mp3: '🎵' };
 const SECTION_COLORS = ['#a435f0','#1e6055','#c0392b','#1d4ed8','#b45309'];
@@ -24,7 +29,7 @@ function setLocalProgress(kbId: string, docId: string, done: boolean) {
 }
 async function syncProgressToServer(userId: string, kbId: string, docId: string, completed: boolean) {
   try {
-    await fetch(`/api/v1/learner/lesson?user_id=${encodeURIComponent(userId)}`, {
+    await apiFetch(`/api/v1/learner/lesson?user_id=${encodeURIComponent(userId)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kb_id: kbId, doc_id: docId, completed }),
     });
@@ -32,7 +37,7 @@ async function syncProgressToServer(userId: string, kbId: string, docId: string,
 }
 async function fetchServerProgress(userId: string, kbId: string): Promise<string[]> {
   try {
-    const r = await fetch(`/api/v1/learner/course/${kbId}/progress?user_id=${encodeURIComponent(userId)}`);
+    const r = await apiFetch(`/api/v1/learner/course/${kbId}/progress?user_id=${encodeURIComponent(userId)}`);
     if (r.ok) {
       const d = await r.json();
       return d.completed_doc_ids ?? [];
@@ -174,11 +179,12 @@ export function CourseDetailPage() {
   const loadKbAndDocs = async () => {
     try {
       const [kbData, docsData] = await Promise.all([
-        fetch(`${KB_API}/${kbId}`).then(r => r.ok ? r.json() : null),
-        fetch(`${KB_API}/${kbId}/documents`).then(r => r.ok ? r.json() : null),
+        apiFetch(`${KB_API}/${kbId}`).then(r => r.ok ? r.json() : null),
+        apiFetch(`${KB_API}/${kbId}/documents`).then(r => r.ok ? r.json() : null),
       ]);
       setKb(kbData ?? DEMO_KBS[kbId] ?? null);
-      const docList: Document[] = docsData?.items ?? docsData ?? DEMO_DOCS[kbId] ?? [];
+      const docList: Document[] = (Array.isArray(docsData?.items) ? docsData.items : Array.isArray(docsData) ? docsData : DEMO_DOCS[kbId] ?? [])
+        .map((d: Document) => ({ ...d, title: decodeTitle(d.title) }));
       setDocs(docList);
       if (docList.length > 0 && !activeDoc) setActiveDoc(docList[0]);
       return docList;
@@ -217,10 +223,11 @@ export function CourseDetailPage() {
     if (pollRef.current) return;
     pollRef.current = setInterval(async () => {
       try {
-        const r = await fetch(`${KB_API}/${kbId}/documents`);
+        const r = await apiFetch(`${KB_API}/${kbId}/documents`);
         if (!r.ok) return;
         const d = await r.json();
-        const updated: Document[] = d.items ?? d ?? [];
+        const updated: Document[] = (Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : [])
+          .map((doc: Document) => ({ ...doc, title: decodeTitle(doc.title) }));
         setDocs(updated);
         // Stop polling once all docs are settled
         const allSettled = updated.every(doc => doc.status === 'active' || doc.status === 'error' || doc.status === 'retired');
@@ -235,7 +242,7 @@ export function CourseDetailPage() {
   /* ── Load document content ─────────────────────────────────────────────── */
   useEffect(() => {
     if (!activeDoc) return;
-    fetch(`${CONTENT_API}/documents/${activeDoc.id}/content`)
+    apiFetch(`${CONTENT_API}/documents/${activeDoc.id}/content`)
       .then(r => r.ok ? r.json() : null)
       .then(d => setDocContent(d?.content ?? DEMO_CONTENT[activeDoc.id] ?? ''))
       .catch(() => setDocContent(DEMO_CONTENT[activeDoc.id] ?? `# ${activeDoc.title}\n\nContent loading...`));
@@ -246,7 +253,7 @@ export function CourseDetailPage() {
     if (creatingSession.current || sessionId) return;
     creatingSession.current = true;
     try {
-      const resp = await fetch(`${CHAT_API}/sessions`, {
+      const resp = await apiFetch(`${CHAT_API}/sessions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user?.id, knowledge_base_id: kbId }),
       });
@@ -273,9 +280,15 @@ export function CourseDetailPage() {
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content };
     setMessages(m => [...m, userMsg]);
     try {
-      const resp = await fetch(`${CHAT_API}/sessions/${sessionId}/messages`, {
+      const resp = await apiFetch(`${CHAT_API}/sessions/${sessionId}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify({ content, knowledge_base_id: kbId }),
+        body: JSON.stringify({
+          content,
+          knowledge_base_id: kbId,
+          // Include the currently-viewed lesson content so the AI always has it,
+          // even when cross-lingual embedding mismatches cause RAG to miss it.
+          lesson_context: docContent ? docContent.slice(0, 6000) : undefined,
+        }),
       });
       if (!resp.ok) throw new Error();
       const reader = resp.body?.getReader();

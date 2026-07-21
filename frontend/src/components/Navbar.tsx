@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../auth/UserContext';
+import { apiFetch } from '../config/apiFetch';
 import './Navbar.css';
 
 const ROLE_COLOR: Record<string, string> = {
@@ -19,6 +20,7 @@ export function Navbar() {
   const { user, logout } = useUser();
   const [query, setQuery]       = useState('');
   const [dropOpen, setDropOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const dropRef = useRef<HTMLDivElement>(null);
 
   const primaryRole = user?.isAdmin ? 'Admin'
@@ -33,6 +35,20 @@ export function Navbar() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Poll pending course count so the admin badge stays live
+  useEffect(() => {
+    if (!user?.isAdmin) return;
+    const fetch_count = () => {
+      apiFetch('/api/v1/knowledge-bases/admin/pending')
+        .then(r => r.ok ? r.json() : { items: [] })
+        .then(d => setPendingCount(Array.isArray(d?.items) ? d.items.length : 0))
+        .catch(() => {});
+    };
+    fetch_count();
+    const interval = setInterval(fetch_count, 60_000); // refresh every minute
+    return () => clearInterval(interval);
+  }, [user?.isAdmin]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,8 +95,17 @@ export function Navbar() {
         )}
         {user?.isAdmin && (
           <Link to="/admin/config"
-            className={`navbar-link${location.pathname.startsWith('/admin') ? ' active' : ''}`}>
+            className={`navbar-link${location.pathname.startsWith('/admin') ? ' active' : ''}`}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
             ⚙️ Admin
+            {pendingCount > 0 && (
+              <span style={{
+                background: '#ef4444', color: '#fff',
+                fontSize: '0.65rem', fontWeight: 700,
+                borderRadius: 99, padding: '1px 5px',
+                lineHeight: 1.4, minWidth: 16, textAlign: 'center',
+              }}>{pendingCount}</span>
+            )}
           </Link>
         )}
 
@@ -158,6 +183,21 @@ export function Navbar() {
                     style={{ display: 'block', padding: '9px 16px', fontSize: '0.85rem', color: 'var(--text)' }}
                     onClick={() => setDropOpen(false)}>
                     👥 User Approvals
+                  </Link>
+                )}
+                {user?.isAdmin && (
+                  <Link to="/admin/approvals"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', fontSize: '0.85rem', color: 'var(--text)' }}
+                    onClick={() => setDropOpen(false)}>
+                    📋 Course Approvals
+                    {pendingCount > 0 && (
+                      <span style={{
+                        background: '#ef4444', color: '#fff',
+                        fontSize: '0.68rem', fontWeight: 700,
+                        borderRadius: 99, padding: '1px 6px',
+                        marginLeft: 'auto',
+                      }}>{pendingCount} pending</span>
+                    )}
                   </Link>
                 )}
                 <button

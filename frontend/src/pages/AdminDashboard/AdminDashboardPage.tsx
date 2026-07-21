@@ -3,6 +3,7 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
+import { apiFetch } from '../../config/apiFetch';
 
 interface DashboardData {
   total_learners: number;
@@ -33,7 +34,7 @@ export function AdminDashboardPage() {
   const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/analytics/admin/dashboard')
+    apiFetch('/api/v1/analytics/admin/dashboard')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
       .catch(e => setError(e.message))

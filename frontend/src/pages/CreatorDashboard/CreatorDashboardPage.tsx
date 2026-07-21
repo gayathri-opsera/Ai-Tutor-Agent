@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../../config/apiFetch';
 
 interface CourseMetric {
   knowledge_base_id: string;
@@ -6,7 +7,7 @@ interface CourseMetric {
   age_group: string | null;
   approval_status: string;
   enrollment_count: number;
-  avg_completion_pct: number;
+  avg_proficiency_score: number;
   avg_assessment_score: number;
 }
 
@@ -29,7 +30,7 @@ export function CreatorDashboardPage() {
   const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/analytics/creator/dashboard')
+    apiFetch('/api/v1/analytics/creator/dashboard')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
       .catch(e => setError(e.message))
@@ -78,7 +79,7 @@ export function CreatorDashboardPage() {
                   <th style={{ padding: '0.75rem', textAlign: 'left' }}>Age Group</th>
                   <th style={{ padding: '0.75rem', textAlign: 'left' }}>Status</th>
                   <th style={{ padding: '0.75rem', textAlign: 'right' }}>Enrollments</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'right' }}>Avg Completion</th>
+                  <th style={{ padding: '0.75rem', textAlign: 'right' }}>Avg Proficiency</th>
                   <th style={{ padding: '0.75rem', textAlign: 'right' }}>Avg Score</th>
                 </tr>
               </thead>
@@ -102,10 +103,10 @@ export function CreatorDashboardPage() {
                         {c.enrollment_count}
                       </td>
                       <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                        {c.avg_completion_pct.toFixed(1)}%
+                        {(c.avg_proficiency_score ?? 0).toFixed(1)}%
                       </td>
                       <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                        {c.avg_assessment_score > 0 ? c.avg_assessment_score.toFixed(1) : '—'}
+                        {(c.avg_assessment_score ?? 0) > 0 ? (c.avg_assessment_score ?? 0).toFixed(1) : '—'}
                       </td>
                     </tr>
                   );

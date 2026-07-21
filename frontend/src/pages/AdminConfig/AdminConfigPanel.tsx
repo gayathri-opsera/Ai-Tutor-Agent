@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../../config/apiFetch';
 
 interface Config { key: string; value: unknown; description: string; }
+interface PendingKB {
+  id: string; name: string; description: string;
+  age_group: string | null; created_at?: string;
+  created_by_keycloak_id?: string | null;
+}
 
 const ADMIN_API = '/api/v1/admin/config';
+const KB_API    = '/api/v1/knowledge-bases';
 
 const DEFAULT_CONFIGS: Config[] = [
   { key: 'confidence_threshold',   value: 0.4,     description: 'Minimum confidence score before showing answer' },
@@ -17,14 +24,17 @@ const DEFAULT_CONFIGS: Config[] = [
 ];
 
 export function AdminConfigPanel() {
-  const [configs, setConfigs]   = useState<Config[]>(DEFAULT_CONFIGS);
-  const [editing, setEditing]   = useState<string | null>(null);
-  const [draftVal, setDraftVal] = useState('');
-  const [saved, setSaved]       = useState<string | null>(null);
-  const [error, setError]       = useState('');
+  const [configs, setConfigs]         = useState<Config[]>(DEFAULT_CONFIGS);
+  const [editing, setEditing]         = useState<string | null>(null);
+  const [draftVal, setDraftVal]       = useState('');
+  const [saved, setSaved]             = useState<string | null>(null);
+  const [error, setError]             = useState('');
+  const [pendingKBs, setPendingKBs]   = useState<PendingKB[]>([]);
+  const [kbAction, setKbAction]       = useState<Record<string, string>>({});
+  const [kbMsg, setKbMsg]             = useState<Record<string, string>>({});
 
   useEffect(() => {
-    fetch(`${ADMIN_API}?organization_id=default`)
+    apiFetch(`${ADMIN_API}?organization_id=default`)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.configs?.length) {
@@ -36,6 +46,12 @@ export function AdminConfigPanel() {
         }
       })
       .catch(() => { /* use defaults */ });
+
+    // Load pending courses for approval
+    apiFetch(`${KB_API}/admin/pending`)
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setPendingKBs(Array.isArray(d?.items) ? d.items : []))
+      .catch(() => {});
   }, []);
 
   const handleSave = async (key: string) => {
@@ -48,7 +64,7 @@ export function AdminConfigPanel() {
     setTimeout(() => setSaved(null), 2500);
 
     try {
-      const res = await fetch(`${ADMIN_API}/${key}?organization_id=default`, {
+      const res = await apiFetch(`${ADMIN_API}/${key}?organization_id=default`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: parsedVal }),
@@ -57,6 +73,23 @@ export function AdminConfigPanel() {
     } catch (e) {
       setError(String(e));
     }
+  };
+
+  const handleKbApproval = async (kb: PendingKB, action: 'approve' | 'reject') => {
+    const reason = kbMsg[kb.id] ?? '';
+    try {
+      const res = await apiFetch(`${KB_API}/${kb.id}/approval`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason: reason || null }),
+      });
+      if (res.ok) {
+        setKbAction(prev => ({ ...prev, [kb.id]: action === 'approve' ? '✓ Approved' : '✗ Rejected' }));
+        setTimeout(() => setPendingKBs(prev => prev.filter(k => k.id !== kb.id)), 1200);
+      } else {
+        setError(`Failed to ${action} course`);
+      }
+    } catch (e) { setError(String(e)); }
   };
 
   const displayValue = (v: unknown): string => {
@@ -80,6 +113,70 @@ export function AdminConfigPanel() {
 
       <div className="container" style={{ paddingTop: 32 }}>
         {error && <div className="alert alert-error mb-4">{error}</div>}
+
+        {/* ── Pending Course Approvals ─────────────────────────────────── */}
+        {pendingKBs.length > 0 && (
+          <div className="monitor-card mb-6" style={{ border: '2px solid #f59e0b' }}>
+            <p className="monitor-card-title" style={{ color: '#92400e' }}>
+              📋 Pending Course Approvals ({pendingKBs.length})
+            </p>
+            <p style={{ fontSize: '0.82rem', color: '#78350f', marginBottom: 16 }}>
+              Review and approve courses before they become visible to learners.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {pendingKBs.map(kb => (
+                <div key={kb.id} style={{
+                  background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+                  padding: '14px 16px', display: 'flex', alignItems: 'flex-start',
+                  gap: 16, flexWrap: 'wrap',
+                }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 2 }}>{kb.name}</p>
+                    <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: 4 }}>
+                      {kb.description || 'No description'} · Age group: {kb.age_group ?? 'Any'}
+                    </p>
+                    <input
+                      className="form-input"
+                      style={{ fontSize: '0.8rem', padding: '4px 10px', marginTop: 4 }}
+                      placeholder="Optional reason / feedback for creator…"
+                      value={kbMsg[kb.id] ?? ''}
+                      onChange={e => setKbMsg(prev => ({ ...prev, [kb.id]: e.target.value }))}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 4 }}>
+                    {kbAction[kb.id] ? (
+                      <span className={`badge ${kbAction[kb.id].startsWith('✓') ? 'badge-success' : 'badge-error'}`}>
+                        {kbAction[kb.id]}
+                      </span>
+                    ) : (
+                      <>
+                        <button className="btn btn-brand btn-sm"
+                          onClick={() => handleKbApproval(kb, 'approve')}>
+                          ✓ Approve
+                        </button>
+                        <button className="btn btn-outline btn-sm"
+                          style={{ borderColor: '#dc2626', color: '#dc2626' }}
+                          onClick={() => handleKbApproval(kb, 'reject')}>
+                          ✗ Reject
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {pendingKBs.length === 0 && (
+          <div className="monitor-card mb-6" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: '1.5rem' }}>✅</span>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>No pending course approvals</p>
+              <p style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>All submitted courses have been reviewed.</p>
+            </div>
+          </div>
+        )}
 
         {/* LLM Provider card */}
         <div className="monitor-card mb-6">
@@ -149,3 +246,4 @@ export function AdminConfigPanel() {
     </div>
   );
 }
+

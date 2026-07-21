@@ -4,6 +4,7 @@ import {
   AreaChart, Area, CartesianGrid, Legend,
 } from 'recharts';
 import { useUser } from '../../auth/UserContext';
+import { apiFetch } from '../../config/apiFetch';
 
 const LEARNER_API = '/api/v1/learner';
 
@@ -49,21 +50,71 @@ function formatTime(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
+const KB_API = '/api/v1/knowledge-bases';
+
+interface KB { id: string; name: string; doc_count: number; }
+interface KBProgress { completed_count: number; completed_doc_ids: string[]; }
+
+function getLocalDone(kbId: string): number {
+  try {
+    const p = JSON.parse(localStorage.getItem(`progress_${kbId}`) ?? '{}');
+    return Object.values(p).filter(Boolean).length;
+  } catch { return 0; }
+}
+
 export function LearnerProgressDashboard() {
   const { user } = useUser();
-  const [data, setData]       = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [data, setData]             = useState<DashboardData | null>(null);
+  const [overallPct, setOverallPct] = useState<number | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
 
   const userId = user?.id ?? 'demo-user';
 
   useEffect(() => {
-    fetch(`${LEARNER_API}/dashboard?user_id=${userId}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
+      // Fetch dashboard data and enrolled KB progress in parallel
+      Promise.all([
+        apiFetch(`${LEARNER_API}/dashboard?user_id=${userId}`).then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json() as Promise<DashboardData>;
+        }),
+        // Only fetch enrolled KBs — overall completion = enrolled courses only
+        apiFetch(`${LEARNER_API}/enrollments?user_id=${encodeURIComponent(userId)}`).then(r => r.ok ? r.json() : { enrolled_kb_ids: [] }),
+        apiFetch(`${KB_API}?organization_id=default`).then(r => r.ok ? r.json() : { items: [] }),
+      ])
+      .then(async ([dashData, enrollData, kbData]) => {
+        setData(dashData);
+
+        const enrolledSet = new Set<string>(enrollData.enrolled_kb_ids ?? []);
+        const allKbs: KB[] = Array.isArray(kbData?.items) ? kbData.items : Array.isArray(kbData) ? kbData : [];
+        // Only count enrolled KBs for overall completion
+        const kbs = allKbs.filter(kb => enrolledSet.has(kb.id));
+
+        if (kbs.length === 0) {
+          setOverallPct(0);
+          setLoading(false);
+          return;
+        }
+
+        const progressEntries = await Promise.all(
+          kbs.map(async (kb) => {
+            try {
+              const r = await apiFetch(`${LEARNER_API}/course/${kb.id}/progress?user_id=${encodeURIComponent(userId)}`);
+              if (r.ok) {
+                const p: KBProgress = await r.json();
+                return { done: p.completed_count, total: kb.doc_count };
+              }
+            } catch { /* ignore */ }
+            return { done: getLocalDone(kb.id), total: kb.doc_count };
+          })
+        );
+
+        const totalDone  = progressEntries.reduce((s, e) => s + e.done,  0);
+        const totalDocs  = progressEntries.reduce((s, e) => s + e.total, 0);
+        const computed   = totalDocs > 0 ? Math.round((totalDone / totalDocs) * 100 * 10) / 10 : 0;
+        setOverallPct(computed);
+        setLoading(false);
       })
-      .then((d: DashboardData) => { setData(d); setLoading(false); })
       .catch((e: Error) => { setError(e.message); setLoading(false); });
   }, [userId]);
 
@@ -101,7 +152,7 @@ export function LearnerProgressDashboard() {
       <div className="stats-row">
         <StatCard
           emoji="📊" title="Overall Completion" accent="#7c3aed"
-          value={`${data.overall_completion_percent}%`}
+          value={`${overallPct ?? data.overall_completion_percent}%`}
           sub="across all enrolled courses"
         />
         <StatCard
@@ -125,10 +176,10 @@ export function LearnerProgressDashboard() {
       <div className="chart-card">
         <div className="flex justify-between mb-2">
           <span className="font-semibold">Overall Completion</span>
-          <span style={{ fontWeight: 700, color: '#7c3aed' }}>{data.overall_completion_percent}%</span>
+          <span style={{ fontWeight: 700, color: '#7c3aed' }}>{overallPct ?? data.overall_completion_percent}%</span>
         </div>
         <div className="progress-bar-container">
-          <div className="progress-bar-fill" style={{ width: `${data.overall_completion_percent}%` }} />
+          <div className="progress-bar-fill" style={{ width: `${overallPct ?? data.overall_completion_percent}%` }} />
         </div>
       </div>
 

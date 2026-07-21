@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CourseCard } from '../../components/CourseCard';
+import { apiFetch } from '../../config/apiFetch';
 
 interface KB { id: string; name: string; description: string; }
 interface Stats { knowledge_bases: number; documents_indexed: number; chat_sessions: number; chunks_in_vector_db: number; }
@@ -15,9 +16,12 @@ export function HomePage() {
 
   useEffect(() => {
     // Fetch knowledge bases
-    fetch('/api/v1/knowledge-bases?organization_id=default')
-      .then(r => r.json())
-      .then(d => setKbs(d.items ?? d ?? []))
+    apiFetch('/api/v1/knowledge-bases?organization_id=default')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => {
+        const items = Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : [];
+        setKbs(items);
+      })
       .catch(() => {
         setKbs([
           { id: 'bbbbbbbb-0001-0000-0000-000000000001', name: 'Python Fundamentals', description: 'Core Python programming: variables, functions, OOP, and async patterns.' },
@@ -27,8 +31,8 @@ export function HomePage() {
 
     // Fetch real-time platform stats
     Promise.all([
-      fetch('/api/v1/stats').then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/v1/analytics/summary').then(r => r.ok ? r.json() : null).catch(() => null),
+      apiFetch('/api/v1/stats').then(r => r.ok ? r.json() : null).catch(() => null),
+      apiFetch('/api/v1/analytics/summary').then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([contentStats, analyticsStats]) => {
       setStats({
         knowledge_bases: contentStats?.knowledge_bases ?? 0,
@@ -96,8 +100,6 @@ export function HomePage() {
                 emoji={EMOJIS[i % EMOJIS.length]}
                 progress={i === 0 ? 65 : 20}
                 docCount={i === 0 ? 2 : 1}
-                rating={4.5 + i * 0.1}
-                ratingCount={i === 0 ? 1240 : 820}
                 tag={FEATURED_TAGS[i % FEATURED_TAGS.length]}
               />
             ))}
@@ -117,8 +119,6 @@ export function HomePage() {
                 description={kb.description}
                 emoji={EMOJIS[i % EMOJIS.length]}
                 docCount={i === 0 ? 2 : 1}
-                rating={4.4 + (i * 0.2)}
-                ratingCount={850 + i * 310}
                 tag={FEATURED_TAGS[i % FEATURED_TAGS.length]}
               />
             ))}
