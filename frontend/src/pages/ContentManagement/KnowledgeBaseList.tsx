@@ -487,30 +487,26 @@ export function KnowledgeBaseList() {
                     emoji={EMOJIS[i % EMOJIS.length]}
                     docCount={kb.doc_count ?? 0}
                     tag={kb.is_active ? 'Active' : 'Archived'}
+                    enrollButton={
+                      kb.is_active && (!canManage || kb.created_by_keycloak_id !== userKeycloakId) ? (
+                        <button
+                          onClick={e => toggleEnroll(kb, e)}
+                          disabled={enrollingId === kb.id}
+                          style={{
+                            padding: '4px 12px', borderRadius: 20, fontSize: '0.76rem', fontWeight: 700,
+                            cursor: enrollingId === kb.id ? 'wait' : 'pointer', border: '2px solid',
+                            background:  enrolledIds.has(kb.id) ? '#d1fae5' : '#a435f0',
+                            color:       enrolledIds.has(kb.id) ? '#065f46' : '#fff',
+                            borderColor: enrolledIds.has(kb.id) ? '#6ee7b7' : '#a435f0',
+                            transition:  'all 0.15s',
+                            whiteSpace:  'nowrap',
+                          }}
+                        >
+                          {enrollingId === kb.id ? '…' : enrolledIds.has(kb.id) ? '✓ Enrolled' : '+ Enroll'}
+                        </button>
+                      ) : undefined
+                    }
                   />
-                  {/* Enroll / Unenroll button — shown for all users on active courses they can enroll in.
-                       Creators/Admins only see it on courses they did NOT create (they learn from others). */}
-                  {kb.is_active && (
-                    (!canManage || kb.created_by_keycloak_id !== userKeycloakId)
-                  ) && (
-                    <div style={{ position: 'absolute', bottom: 46, right: 12, zIndex: 5 }}
-                      onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={e => toggleEnroll(kb, e)}
-                        disabled={enrollingId === kb.id}
-                        style={{
-                          padding: '5px 14px', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700,
-                          cursor: enrollingId === kb.id ? 'wait' : 'pointer', border: '2px solid',
-                          background:    enrolledIds.has(kb.id) ? '#d1fae5' : '#a435f0',
-                          color:         enrolledIds.has(kb.id) ? '#065f46' : '#fff',
-                          borderColor:   enrolledIds.has(kb.id) ? '#6ee7b7' : '#a435f0',
-                          transition:    'all 0.15s',
-                        }}
-                      >
-                        {enrollingId === kb.id ? '…' : enrolledIds.has(kb.id) ? '✓ Enrolled' : '+ Enroll'}
-                      </button>
-                    </div>
-                  )}
                 </div>
               ))}
 

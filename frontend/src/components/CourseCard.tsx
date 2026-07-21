@@ -9,12 +9,13 @@ interface CourseCardProps {
   tag?: string;
   emoji?: string;
   onClick?: () => void;
+  enrollButton?: React.ReactNode;  // optional enroll/unenroll button rendered in footer
 }
 
 export function CourseCard({
   id, name, description, docCount = 0, progress,
   tag = 'Knowledge Base', emoji = '📚',
-  onClick,
+  onClick, enrollButton,
 }: CourseCardProps) {
   const navigate = useNavigate();
   const handleClick = onClick ?? (() => navigate(`/course/${id}`));
@@ -60,7 +61,10 @@ export function CourseCard({
 
       <div className="course-footer">
         <span className="course-doc-count">📄 {docCount} doc{docCount !== 1 ? 's' : ''}</span>
-        <span className="btn btn-ghost btn-sm">Start →</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {enrollButton}
+          <span className="btn btn-ghost btn-sm">Start →</span>
+        </div>
       </div>
     </article>
   );
