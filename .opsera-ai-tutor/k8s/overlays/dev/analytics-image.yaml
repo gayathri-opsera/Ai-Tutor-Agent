@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: analytics
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-analytics:dev-ce50a9e-20260721190327
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-analytics:dev-9c65447-20260721191542
