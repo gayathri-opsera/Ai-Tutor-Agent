@@ -359,7 +359,7 @@ jobs:
 
       - name: Validate Kustomize Build
         run: |
-          kubectl kustomize .opsera-ai-tutor/k8s/overlays/dev > /dev/null \
+          kubectl kustomize --enable-helm .opsera-ai-tutor/k8s/overlays/dev > /dev/null \
             && echo "✅ Kustomize validation passed" \
             || (echo "❌ Kustomize build failed"; exit 1)
 
