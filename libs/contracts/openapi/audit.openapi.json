@@ -68,7 +68,7 @@
         "operationId": "list_audit_logs_api_v1_audit_logs_get",
         "parameters": [
           {
-            "name": "user_id",
+            "name": "actor_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -80,7 +80,7 @@
                   "type": "null"
                 }
               ],
-              "title": "User Id"
+              "title": "Actor Id"
             }
           },
           {
@@ -203,9 +203,9 @@
             "type": "string",
             "title": "Action"
           },
-          "user_id": {
+          "actor_id": {
             "type": "string",
-            "title": "User Id"
+            "title": "Actor Id"
           },
           "resource_id": {
             "type": "string",
@@ -230,7 +230,7 @@
         "type": "object",
         "required": [
           "action",
-          "user_id",
+          "actor_id",
           "resource_id"
         ],
         "title": "AuditLogRequest"

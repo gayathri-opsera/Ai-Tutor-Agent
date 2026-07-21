@@ -23,8 +23,8 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(message)s")
 
-DB_DSN              = os.getenv("DATABASE_URL",
-                                "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor"  # local-dev only — set DATABASE_URL in production)
+# local-dev fallback — set DATABASE_URL in production
+DB_DSN              = os.getenv("DATABASE_URL", "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor")
 KAFKA_SERVERS       = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 KAFKA_GROUP_ID      = "audit-approval-consumer"
 KAFKA_ENABLED       = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
