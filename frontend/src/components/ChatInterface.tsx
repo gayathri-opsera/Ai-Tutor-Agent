@@ -336,7 +336,7 @@ export function ChatInterface() {
       <aside className="chat-sidebar">
         <div className="chat-sidebar-header">
           <p className="chat-sidebar-title">💬 AI Tutor Chat</p>
-          <p className="chat-sidebar-subtitle">{user?.role}</p>
+          <p className="chat-sidebar-subtitle">{user?.roles?.[0]}</p>
         </div>
 
         <button className="chat-new-btn" onClick={() => createSession(selectedKbId === '__none__' ? undefined : selectedKbId)}>+ New Chat</button>

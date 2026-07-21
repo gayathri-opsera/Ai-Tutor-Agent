@@ -46,7 +46,7 @@ export function MyLearningPage() {
   useEffect(() => {
     // Fetch enrollments first, then load only those KBs
     Promise.all([
-      apiFetch(`${KB_API}?organization_id=default`).then(r => r.ok ? r.json() : {}),
+      apiFetch(`${KB_API}?organization_id=default`).then(r => r.ok ? r.json() : ({} as Record<string, unknown>)),
       apiFetch(`/api/v1/learner/enrollments?user_id=${encodeURIComponent(userId)}`).then(r => r.ok ? r.json() : { enrolled_kb_ids: [] }),
     ])
       .then(async ([kbData, enrollData]) => {
