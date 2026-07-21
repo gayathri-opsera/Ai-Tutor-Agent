@@ -118,7 +118,7 @@ async def _post_audit_log(
                 f"{AUDIT_SERVICE_URL}/api/v1/audit/log",
                 json={
                     "action": action,
-                    "user_id": actor_id,
+                    "actor_id": actor_id,
                     "resource_id": resource_id,
                     "resource_type": "user",
                     "outcome": outcome,
