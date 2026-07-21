@@ -96,8 +96,6 @@ on:
         required: false
       S3_SECRET_KEY:
         required: false
-      GITHUB_TOKEN:
-        required: false
 
 # Minimal permissions for this shared workflow.
 # Callers must pass secrets: inherit for AWS/GH_PAT access.
