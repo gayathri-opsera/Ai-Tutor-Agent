@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: content-ingestion
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-ingestion:dev-9c65447-20260721191535
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-content-ingestion:dev-1c054e6-20260721212302
