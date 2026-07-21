@@ -52,14 +52,14 @@ VALUES
    'default', 'aaaaaaaa-0002-0000-0000-000000000002', true)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO documents (id, knowledge_base_id, title, content_type, status, chunk_count, uploaded_by)
+INSERT INTO documents (id, knowledge_base_id, title, content_type, status, chunk_count)
 VALUES
   ('cccccccc-0001-0000-0000-000000000001', 'bbbbbbbb-0001-0000-0000-000000000001',
-   'Introduction to Python',    'text', 'active', 2, 'aaaaaaaa-0002-0000-0000-000000000002'),
+   'Introduction to Python',    'text', 'active', 2),
   ('cccccccc-0002-0000-0000-000000000002', 'bbbbbbbb-0001-0000-0000-000000000001',
-   'Async Programming in Python','text', 'active', 1, 'aaaaaaaa-0002-0000-0000-000000000002'),
+   'Async Programming in Python','text', 'active', 1),
   ('cccccccc-0003-0000-0000-000000000003', 'bbbbbbbb-0002-0000-0000-000000000002',
-   'Linear Regression Explained','text', 'active', 1, 'aaaaaaaa-0002-0000-0000-000000000002')
+   'Linear Regression Explained','text', 'active', 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO document_chunks (id, document_id, chunk_index, chunk_text, vector_id, metadata)
