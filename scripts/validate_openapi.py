@@ -40,8 +40,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BASELINES_DIR = REPO_ROOT / "libs" / "contracts" / "openapi"
-CONTRACTS_SRC = str(REPO_ROOT / "libs" / "contracts" / "src")
-VECTOR_DB_SRC = str(REPO_ROOT / "libs" / "vector-db" / "src")
+CONTRACTS_SRC  = str(REPO_ROOT / "libs" / "contracts" / "src")
+VECTOR_DB_SRC  = str(REPO_ROOT / "libs" / "vector-db" / "src")
+MODEL_SRC      = str(REPO_ROOT / "libs" / "model" / "src")
+AUTH_SRC       = str(REPO_ROOT / "libs" / "auth" / "src")
 
 # ── Service registry ──────────────────────────────────────────────────────────
 # Each entry describes how to import the FastAPI app for a service.
@@ -66,7 +68,7 @@ SERVICES: dict[str, dict] = {
         "service_dir": "services/rag-pipeline",
         "app_attr": "create_app",
         "mock_modules": ["asyncpg", "weaviate"],
-        "extra_paths": [VECTOR_DB_SRC],
+        "extra_paths": [VECTOR_DB_SRC, MODEL_SRC, AUTH_SRC],
         "factory_repo": False,
     },
     "llm-gateway": {

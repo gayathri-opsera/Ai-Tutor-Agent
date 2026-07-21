@@ -106,11 +106,11 @@ type = layers
 layers =
     src.api
     src.service
-    src.chunking
     src.dedup
-    src.transcription
     src.url_ingestion
     src.quality_flag
+    src.chunking
+    src.transcription
 include_paths =
     services/content-ingestion
 

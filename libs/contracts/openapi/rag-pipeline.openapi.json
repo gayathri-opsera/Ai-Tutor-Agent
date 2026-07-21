@@ -128,9 +128,51 @@
         }
       }
     },
+    "/api/internal/rag/suggested-questions": {
+      "get": {
+        "tags": [
+          "rag"
+        ],
+        "summary": "Suggested Questions",
+        "description": "Return 3-5 course-contextual suggested questions for the chat landing screen.\n\nRetrieves representative chunks from the knowledge base, then calls the\nLLM gateway to generate relevant questions. Falls back to a static list\nif the LLM or RAG pipeline is unavailable.",
+        "operationId": "suggested_questions_api_internal_rag_suggested_questions_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
+        "description": "Health check with Weaviate connectivity status and vector sync metrics.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -241,6 +283,11 @@
             },
             "type": "array",
             "title": "Chunks"
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
           }
         },
         "type": "object",

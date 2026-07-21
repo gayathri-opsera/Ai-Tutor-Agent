@@ -25,7 +25,7 @@ try:
     DATABASE_URL = get_db_dsn()
     WEAVIATE_URL = get_weaviate_url()
 except ImportError:
-    DATABASE_URL = os.environ["DATABASE_URL"]
+    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor")
     WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://weaviate:8080")
 
 

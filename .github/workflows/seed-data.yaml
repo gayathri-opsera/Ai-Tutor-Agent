@@ -1,0 +1,187 @@
+name: "Seed Database & Vectors"
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_vectors:
+        description: 'Also seed Weaviate vectors'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-west-2
+  SPOKE_CLUSTER: opsera-usw2-np
+  NAMESPACE: opsera-ai-tutor-dev
+
+jobs:
+  run-migrations:
+    name: "01 - DB Migrations & Schema"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Connect to Spoke Cluster
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Postgres Pod
+        run: |
+          echo "Waiting for postgres pod to be ready..."
+          kubectl wait --for=condition=ready pod -l app=postgres \
+            -n ${{ env.NAMESPACE }} --timeout=120s
+          echo "✅ Postgres is ready"
+
+      - name: Run Alembic Migrations
+        run: |
+          # Delete any previous migration job
+          kubectl delete job db-migrate -n ${{ env.NAMESPACE }} --ignore-not-found
+
+          # Apply migration job from base manifests
+          kubectl apply -f .opsera-ai-tutor/k8s/base/db-migrate-job.yaml -n ${{ env.NAMESPACE }}
+
+          # Wait for job to complete
+          echo "Waiting for db-migrate job to complete..."
+          kubectl wait --for=condition=complete job/db-migrate \
+            -n ${{ env.NAMESPACE }} --timeout=300s
+
+          echo "✅ DB migration job complete"
+          kubectl logs -l job-name=db-migrate -n ${{ env.NAMESPACE }} --tail=30
+
+  seed-sql:
+    name: "02 - Seed SQL Data"
+    needs: [run-migrations]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Connect to Spoke Cluster
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Get Postgres Pod
+        id: pgpod
+        run: |
+          POD=$(kubectl get pod -l app=postgres -n ${{ env.NAMESPACE }} \
+            -o jsonpath='{.items[0].metadata.name}')
+          echo "pod=${POD}" >> $GITHUB_OUTPUT
+          echo "Postgres pod: ${POD}"
+
+      - name: Run 001_roles.sql
+        run: |
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "$(cat services/db/seeds/001_roles.sql)"
+          echo "✅ Roles seeded"
+
+      - name: Run 002_admin_config.sql
+        run: |
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "$(cat services/db/seeds/002_admin_config.sql)"
+          echo "✅ Admin config seeded"
+
+      - name: Run 003_sample_data.sql
+        run: |
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "$(cat services/db/seeds/003_sample_data.sql)"
+          echo "✅ Sample data seeded"
+
+      - name: Verify Seed Data
+        run: |
+          echo "=== Roles ==="
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "SELECT id, name FROM roles ORDER BY name;"
+
+          echo "=== Users ==="
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "SELECT id, full_name_encrypted, keycloak_id FROM users;"
+
+          echo "=== Knowledge Bases ==="
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "SELECT id, name, is_active FROM knowledge_bases;"
+
+          echo "=== Documents ==="
+          kubectl exec -n ${{ env.NAMESPACE }} ${{ steps.pgpod.outputs.pod }} -- \
+            psql -U ai_tutor -d ai_tutor -c "SELECT id, title, status FROM documents;"
+
+  seed-vectors:
+    name: "03 - Seed Weaviate Vectors"
+    needs: [seed-sql]
+    if: ${{ inputs.include_vectors == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Connect to Spoke Cluster
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install asyncpg httpx
+
+      - name: Port-forward RAG pipeline
+        run: |
+          # Port-forward the rag-pipeline service
+          kubectl port-forward svc/rag-pipeline 8002:8002 -n ${{ env.NAMESPACE }} &
+          echo "PF_PID=$!" >> $GITHUB_ENV
+          sleep 5
+          echo "✅ RAG pipeline port-forwarded to localhost:8002"
+
+      - name: Port-forward Postgres
+        run: |
+          kubectl port-forward svc/postgres 5432:5432 -n ${{ env.NAMESPACE }} &
+          echo "PG_PF_PID=$!" >> $GITHUB_ENV
+          sleep 3
+          echo "✅ Postgres port-forwarded to localhost:5432"
+
+      - name: Run Vector Seed
+        env:
+          DATABASE_URL: postgresql://ai_tutor:${{ secrets.DB_PASSWORD }}@localhost:5432/ai_tutor
+          INGEST_SERVICE_URL: http://localhost:8002
+        run: |
+          python services/db/seeds/seed_vectors.py
+          echo "✅ Vector seeding complete"
+
+      - name: Cleanup Port-Forwards
+        if: always()
+        run: |
+          kill $PF_PID $PG_PF_PID 2>/dev/null || true
