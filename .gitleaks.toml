@@ -25,4 +25,8 @@ paths = [
   '''.*tests/.*fixture.*''',
   '''libs/contracts/openapi/.*\.json''',
   '''.github/workflows/.*''',
+  # detect-secrets baseline — stores SHA-256 hashes of secrets, not plaintext
+  '''\.secrets\.baseline''',
+  # runbooks may contain localhost curl examples — not real credentials
+  '''docs/runbooks/.*''',
 ]
