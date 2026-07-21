@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: admin-config
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-admin-config:dev-979effc-20260721184346
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-admin-config:dev-9c65447-20260721191533
