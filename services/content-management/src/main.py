@@ -73,7 +73,7 @@ async def _seed_db(pool) -> None:
                 """
                 INSERT INTO users (id, email_encrypted, email_hash, full_name_encrypted, keycloak_id, approval_status)
                 VALUES ($1::uuid, $2, $3, $4, $5::text, 'approved')
-                ON CONFLICT (id) DO UPDATE SET approval_status = 'approved'
+                ON CONFLICT DO NOTHING
                 """,
                 u["id"],
                 u["email"],
@@ -87,7 +87,7 @@ async def _seed_db(pool) -> None:
             await conn.execute(
                 """
                 INSERT INTO knowledge_bases (id, name, description, organization_id, approval_status)
-                VALUES ($1, $2, $3, $4, 'approved'::kb_approval_status_enum)
+                VALUES ($1, $2, $3, $4, 'approved')
                 ON CONFLICT (id) DO NOTHING
                 """,
                 kb.id, kb.name, kb.description, kb.organization_id,
