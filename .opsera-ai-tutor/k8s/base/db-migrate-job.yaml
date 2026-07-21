@@ -24,7 +24,6 @@ spec:
           args:
             - |
               psql -h postgres -U ai_tutor -d ai_tutor <<'ENDSQL'
-              \set ON_ERROR_STOP on
               CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
               DO \$\$ BEGIN
