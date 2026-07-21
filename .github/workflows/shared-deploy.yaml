@@ -136,7 +136,7 @@ jobs:
       - name: Run detect-secrets scan
         run: |
           pip install --quiet detect-secrets
-          detect-secrets scan > /tmp/new-secrets.json
+          detect-secrets scan --exclude-files '\.secrets\.baseline' > /tmp/new-secrets.json
 
           python3 - <<'PYEOF'
           import json, sys
