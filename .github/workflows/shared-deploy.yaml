@@ -100,7 +100,9 @@ on:
 # Minimal permissions for this shared workflow.
 # Callers must pass secrets: inherit for AWS/GH_PAT access.
 permissions:
-  contents: read
+  contents: write      # needed for git push (manifest updates)
+  security-events: write  # needed by security-scan (gitleaks) and grype-scan (SARIF)
+  id-token: write      # needed for OIDC/AWS auth
 
 env:
   AWS_REGION: us-west-2
