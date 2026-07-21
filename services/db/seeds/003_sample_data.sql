@@ -1,17 +1,17 @@
 -- Seed: sample data for local development
 -- Users (PII-safe: encrypted fields use placeholder bytes, email_hash is sha256)
 
-INSERT INTO users (id, email_encrypted, email_hash, full_name_encrypted, keycloak_id, is_active, data_classification)
+INSERT INTO users (id, email_encrypted, email_hash, full_name_encrypted, keycloak_id, is_active)
 VALUES
   ('aaaaaaaa-0001-0000-0000-000000000001',
    '\x61646d696e406169', encode(digest('admin@ai-tutor.local',   'sha256'), 'hex'),
-   '\x416c69636520416461', 'keycloak-admin-001',   true, 'CONFIDENTIAL'),
+   '\x416c69636520416461', 'keycloak-admin-001',   true),
   ('aaaaaaaa-0002-0000-0000-000000000002',
    '\x637265617465',     encode(digest('creator@ai-tutor.local', 'sha256'), 'hex'),
-   '\x426f6220437265',   'keycloak-creator-002', true, 'CONFIDENTIAL'),
+   '\x426f6220437265',   'keycloak-creator-002', true),
   ('aaaaaaaa-0003-0000-0000-000000000003',
    '\x6c6561726e6572',   encode(digest('learner@ai-tutor.local', 'sha256'), 'hex'),
-   '\x4361726f6c204c65', 'keycloak-learner-003', true, 'CONFIDENTIAL')
+   '\x4361726f6c204c65', 'keycloak-learner-003', true)
 ON CONFLICT (email_hash) DO NOTHING;
 
 INSERT INTO user_roles (user_id, role_id) VALUES
