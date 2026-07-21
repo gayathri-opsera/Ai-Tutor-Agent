@@ -10,40 +10,19 @@ title = "ai-tutor-agent gitleaks config"
 [extend]
 useDefault = true
 
-[[allowlist]]
-description = "Kubernetes manifest placeholder values (not real credentials)"
+# Global allowlist — gitleaks v8 expects a single [allowlist] map, not [[allowlist]] array.
+[allowlist]
+description = "Known false-positive patterns in this repo"
 regexes = [
   '''PLACEHOLDER_ECR_URI_[A-Z_]+''',
   '''<YOUR_[A-Z_]+_HERE>''',
-]
-
-[[allowlist]]
-description = "ArgoCD manifest template variables"
-regexes = [
   '''\$\{[A-Z_]+\}''',
+  '''example\.com''',
 ]
 paths = [
   '''.opsera-ai-tutor/k8s/.*''',
-]
-
-[[allowlist]]
-description = "Test fixture files may contain synthetic credentials for unit testing — not real secrets"
-paths = [
   '''.*tests/fixtures/.*''',
   '''.*tests/.*fixture.*''',
-]
-
-[[allowlist]]
-description = "OpenAPI baseline schemas do not contain credentials"
-paths = [
   '''libs/contracts/openapi/.*\.json''',
-]
-
-[[allowlist]]
-description = "GitHub Actions example values in workflow documentation"
-paths = [
   '''.github/workflows/.*''',
-]
-regexes = [
-  '''example\.com''',
 ]
