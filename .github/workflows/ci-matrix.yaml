@@ -28,8 +28,10 @@ on:
         default: "false"
 
 permissions:
-  contents: read
+  contents: write         # shared-deploy update-manifests job needs git push
   pull-requests: read
+  security-events: write  # security-scan and grype-scan upload SARIF
+  id-token: write         # OIDC/AWS authentication
 
 jobs:
   # ── Stage 1 ──────────────────────────────────────────────────────────────
