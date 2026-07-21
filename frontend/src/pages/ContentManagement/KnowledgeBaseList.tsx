@@ -5,7 +5,7 @@ import { KB_API } from '../../config/api';
 import { apiFetch } from '../../config/apiFetch';
 import { useUser } from '../../auth/UserContext';
 
-interface KB { id: string; name: string; description: string; is_active: boolean; doc_count?: number; }
+interface KB { id: string; name: string; description: string; is_active: boolean; doc_count?: number; created_by_keycloak_id?: string; }
 
 const EMOJIS  = ['📚', '🤖', '🧠', '💡', '🔬', '🎯', '⚡', '🌐'];
 
@@ -235,7 +235,8 @@ export function KnowledgeBaseList() {
 
   const searchQuery = searchParams.get('q')?.toLowerCase() ?? '';
   const canManage   = user?.isCreator === true || user?.isAdmin === true;
-  const isLearner   = !canManage; // learners see enroll/unenroll
+  // Creators/Admins can enroll in courses they didn't create (to learn from them)
+  const userKeycloakId = user?.keycloak_id ?? '';
 
   const userId = user?.id ?? 'demo-user';
 
@@ -487,8 +488,11 @@ export function KnowledgeBaseList() {
                     docCount={kb.doc_count ?? 0}
                     tag={kb.is_active ? 'Active' : 'Archived'}
                   />
-                  {/* Enroll / Unenroll button — shown for learners on active courses */}
-                  {isLearner && kb.is_active && (
+                  {/* Enroll / Unenroll button — shown for all users on active courses they can enroll in.
+                       Creators/Admins only see it on courses they did NOT create (they learn from others). */}
+                  {kb.is_active && (
+                    (!canManage || kb.created_by_keycloak_id !== userKeycloakId)
+                  ) && (
                     <div style={{ position: 'absolute', bottom: 46, right: 12, zIndex: 5 }}
                       onClick={e => e.stopPropagation()}>
                       <button
