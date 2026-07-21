@@ -24,15 +24,8 @@ spec:
           args:
             - |
               psql -h postgres -U ai_tutor -d ai_tutor <<'ENDSQL'
+              \set ON_ERROR_STOP on
               CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-              DO \$\$ BEGIN
-                CREATE TYPE data_classification_enum AS ENUM ('PUBLIC','INTERNAL','CONFIDENTIAL','RESTRICTED');
-              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
-
-              DO \$\$ BEGIN
-                CREATE TYPE approval_status_enum AS ENUM ('pending','approved','rejected','suspended');
-              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
 
               DO \$\$ BEGIN
                 CREATE TYPE content_type_enum AS ENUM ('pdf','docx','mp4','mp3','wav','url','text');
@@ -52,11 +45,10 @@ spec:
                 name             VARCHAR(50) NOT NULL UNIQUE,
                 description      TEXT,
                 created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                data_classification data_classification_enum NOT NULL DEFAULT 'INTERNAL'
+                updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
               );
 
-              -- users
+              -- users (approval_status as TEXT so no enum dependency)
               CREATE TABLE IF NOT EXISTS users (
                 id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
                 email_encrypted      BYTEA NOT NULL DEFAULT '\x00',
@@ -65,10 +57,9 @@ spec:
                 keycloak_id          VARCHAR(255) UNIQUE,
                 is_active            BOOLEAN NOT NULL DEFAULT true,
                 created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                data_classification  data_classification_enum NOT NULL DEFAULT 'CONFIDENTIAL'
+                updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
               );
-              ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status approval_status_enum NOT NULL DEFAULT 'approved';
+              ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
               CREATE INDEX IF NOT EXISTS ix_users_email_hash       ON users(email_hash);
               CREATE INDEX IF NOT EXISTS ix_users_keycloak_id      ON users(keycloak_id);
               CREATE INDEX IF NOT EXISTS ix_users_approval_status  ON users(approval_status);
@@ -78,7 +69,6 @@ spec:
                 user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 role_id     UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
                 assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                data_classification data_classification_enum NOT NULL DEFAULT 'INTERNAL',
                 PRIMARY KEY (user_id, role_id)
               );
               CREATE INDEX IF NOT EXISTS ix_user_roles_user_id ON user_roles(user_id);

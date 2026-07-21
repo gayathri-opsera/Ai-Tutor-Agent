@@ -9,7 +9,13 @@ COPY frontend/package*.json ./
 RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Build production bundle
+# VITE_AUTH_MOCK=true bakes in mock-auth mode so the deployed app never
+# redirects to a local Keycloak instance that doesn't exist in the cluster.
 COPY frontend/ .
+ARG VITE_AUTH_MOCK=true
+ARG VITE_API_BASE_URL=""
+ENV VITE_AUTH_MOCK=$VITE_AUTH_MOCK
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
 # Runtime stage — serve built assets via nginx (non-root, port 8080)

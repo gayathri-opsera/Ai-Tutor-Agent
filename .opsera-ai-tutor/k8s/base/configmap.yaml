@@ -33,8 +33,10 @@ data:
   CB_WINDOW_SECONDS: "30"
   CB_RECOVERY_TIMEOUT_SECONDS: "60"
 
-  # Auth — set to false once Keycloak is ready
+  # Auth — AUTH_MOCK=true enables mock-token bypass for dev/staging clusters.
+  # The frontend is built with VITE_AUTH_MOCK=true so it never redirects to Keycloak.
   AUTH_DISABLED: "false"
+  AUTH_MOCK: "true"
   KEYCLOAK_REALM: "ai-tutor"
   KEYCLOAK_CLIENT_ID: "ai-tutor-backend"
   AZURE_OPENAI_DEPLOYMENT: "gpt-4o"
