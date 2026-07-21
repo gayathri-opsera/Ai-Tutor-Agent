@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: learner-profile
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-learner-profile:dev-9c65447-20260721191527
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-learner-profile:dev-1c054e6-20260721212216
