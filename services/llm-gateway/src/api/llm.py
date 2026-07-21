@@ -100,20 +100,28 @@ async def embed(
     body: dict,
     request: Request,
 ) -> dict:
-    """Generate embeddings — always uses OpenAI (Anthropic has no embedding API)."""
+    """Generate embeddings — proxies to the dedicated embedding-service.
+
+    The primary LLM provider (Anthropic) has no embedding endpoint; routing
+    to the embedding-service avoids the NotImplementedError and keeps latency
+    low by using the local sentence-transformers model.
+    """
+    import os, httpx as _httpx
     texts: list[str] = body.get("texts", [])
     model: str | None = body.get("model")
     if not texts:
         raise HTTPException(status_code=422, detail="'texts' list is required")
-    llm_router: LLMRouter = request.app.state.llm_router
+
+    embedding_url = os.getenv("EMBEDDING_SERVICE_URL", "http://embedding-service:8001")
     try:
-        # Try primary first; fall back to OpenAI provider if primary doesn't support embeddings
-        try:
-            embeddings = await llm_router.primary.embed(texts, model)
-        except NotImplementedError:
-            from src.providers.openai_provider import OpenAIProvider
-            embeddings = await OpenAIProvider().embed(texts, model)
-        return {"embeddings": embeddings, "model": model or "text-embedding-ada-002"}
+        async with _httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{embedding_url}/api/internal/embeddings/generate",
+                json={"texts": texts, "model": model},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return {"embeddings": data.get("embeddings", []), "model": data.get("model", model or "multilingual")}
     except Exception as exc:
         logger.exception("Embed failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

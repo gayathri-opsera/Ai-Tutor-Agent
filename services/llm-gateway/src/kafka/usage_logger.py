@@ -86,14 +86,16 @@ class KafkaUsageLogger:
         if not settings.kafka_enabled:
             logger.info("Kafka usage logging disabled via config.")
             return
+        producer = None
         try:
             from aiokafka import AIOKafkaProducer  # type: ignore[import]
 
-            self._producer = AIOKafkaProducer(
+            producer = AIOKafkaProducer(
                 bootstrap_servers=settings.kafka_bootstrap_servers,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             )
-            await self._producer.start()
+            await producer.start()
+            self._producer = producer
             logger.info(
                 "Kafka producer started (servers=%s, topic=%s)",
                 settings.kafka_bootstrap_servers,
@@ -101,6 +103,11 @@ class KafkaUsageLogger:
             )
         except Exception as exc:  # pragma: no cover
             logger.warning("Failed to start Kafka producer: %s — events will be logged locally.", exc)
+            if producer is not None:
+                try:
+                    await producer.stop()
+                except Exception:
+                    pass
             self._producer = None
 
     async def stop(self) -> None:

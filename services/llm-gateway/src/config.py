@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     # Kafka
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_usage_topic: str = "llm-usage-events"
-    kafka_enabled: bool = True
+    kafka_sync_mode: bool = True  # when True Kafka producer is disabled — no broker needed
+    kafka_enabled: bool = False   # disabled by default; set KAFKA_ENABLED=true with a real broker
 
     # PII scrubbing
     pii_patterns_file: str = ""   # path to extra patterns JSON; built-ins always active

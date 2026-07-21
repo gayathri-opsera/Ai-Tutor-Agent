@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Default embedding model per backend
     openai_embedding_model: str = "text-embedding-ada-002"
-    st_model_name: str = "all-MiniLM-L6-v2"   # sentence-transformers model
+    st_model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"   # multilingual model (50+ languages, 384-dim)
 
     # Request limits
     max_texts_per_batch: int = 100
