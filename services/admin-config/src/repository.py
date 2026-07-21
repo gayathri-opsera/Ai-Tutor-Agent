@@ -153,3 +153,68 @@ class UserRepository:
                 full_name_encrypted,
             )
         return dict(row)  # type: ignore[return-value]
+
+    async def list_all_users(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status_filter: str | None = None,
+    ) -> tuple[list[UserRecord], int]:
+        """Return all users (optionally filtered by approval_status).
+
+        Joins user_local_auth to expose plain email for self-registered users.
+        Falls back to decoding email_encrypted bytes for seed/OAuth users.
+        """
+        async with self._pool.acquire() as conn:
+            base_select = """
+                SELECT u.id::text, u.keycloak_id, u.email_hash, u.approval_status,
+                       u.created_at::text,
+                       COALESCE(la.email, convert_from(u.email_encrypted, 'UTF8')) AS email,
+                       convert_from(u.full_name_encrypted, 'UTF8') AS full_name
+                FROM users u
+                LEFT JOIN user_local_auth la ON la.user_id = u.id
+            """
+            if status_filter:
+                total = await conn.fetchval(
+                    "SELECT COUNT(*) FROM users WHERE approval_status = $1", status_filter
+                )
+                rows = await conn.fetch(
+                    base_select + "WHERE u.approval_status = $1 ORDER BY u.created_at DESC LIMIT $2 OFFSET $3",
+                    status_filter, limit, offset,
+                )
+            else:
+                total = await conn.fetchval("SELECT COUNT(*) FROM users")
+                rows = await conn.fetch(
+                    base_select + "ORDER BY u.created_at DESC LIMIT $1 OFFSET $2",
+                    limit, offset,
+                )
+        return [dict(r) for r in rows], total  # type: ignore[return-value]
+
+    async def get_user_roles(self, user_id: str) -> list[str]:
+        """Return role names assigned to a user."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT r.name
+                FROM user_roles ur
+                JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = $1::uuid
+                """,
+                user_id,
+            )
+        return [r["name"] for r in rows]
+
+    async def revoke_roles(self, user_id: str) -> None:
+        """Remove all role assignments for a user."""
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM user_roles WHERE user_id = $1::uuid", user_id
+            )
+
+    async def delete_user(self, user_id: str) -> bool:
+        """Hard-delete a user record. Returns True if a row was deleted."""
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM users WHERE id = $1::uuid", user_id
+            )
+        return result == "DELETE 1"

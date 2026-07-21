@@ -1,11 +1,15 @@
-"""Admin user approval API — list pending, approve, and reject registrations.
+"""Admin user management API — full CRUD for user records.
 
-All endpoints require Admin or SuperAdmin role (enforced via @require_role).
+All endpoints require Admin or SuperAdmin role.
 
 Endpoints:
-  GET  /api/v1/admin/users/pending          — paginated pending registration list
-  POST /api/v1/admin/users/{user_id}/approve — approve + assign roles
-  POST /api/v1/admin/users/{user_id}/reject  — reject registration
+  GET    /api/v1/admin/users                 — paginated list of ALL users
+  GET    /api/v1/admin/users/pending         — paginated pending list
+  GET    /api/v1/admin/users/{user_id}       — get single user + roles
+  PUT    /api/v1/admin/users/{user_id}       — update status + roles
+  DELETE /api/v1/admin/users/{user_id}       — hard-delete user
+  POST   /api/v1/admin/users/{user_id}/approve — approve + assign roles
+  POST   /api/v1/admin/users/{user_id}/reject  — reject registration
 """
 from __future__ import annotations
 
@@ -60,6 +64,29 @@ class ApprovalActionResponse(BaseModel):
     approval_status: str
     roles_assigned: list[str] = []
     message: str
+
+
+class UserDetailResponse(BaseModel):
+    id: str
+    keycloak_id: str
+    email_hash: str
+    approval_status: str
+    roles: list[str]
+    created_at: str
+    email: str = ""
+    full_name: str = ""
+
+
+class AllUsersResponse(BaseModel):
+    users: list[UserDetailResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class UpdateUserRequest(BaseModel):
+    approval_status: str | None = None
+    roles: list[str] | None = None
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -225,4 +252,125 @@ async def reject_user(
         approval_status="rejected",
         roles_assigned=[],
         message="User rejected",
+    )
+
+
+# ── Full CRUD ─────────────────────────────────────────────────────────────────
+
+@router.get("", response_model=AllUsersResponse)
+async def list_all_users(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    status: str | None = None,
+) -> AllUsersResponse:
+    """Return all users (admin only). Optionally filter by approval_status."""
+    await _require_admin(request)
+    repo: UserRepository = request.app.state.user_repo
+    users, total = await repo.list_all_users(limit=limit, offset=offset, status_filter=status)
+    result = []
+    for u in users:
+        roles = await repo.get_user_roles(u["id"])
+        result.append(UserDetailResponse(
+            **{k: v for k, v in u.items() if k in ("id", "keycloak_id", "email_hash", "approval_status", "created_at")},
+            roles=roles,
+            email=u.get("email", "") or "",
+            full_name=u.get("full_name", "") or "",
+        ))
+    return AllUsersResponse(users=result, total=total, limit=limit, offset=offset)
+
+
+@router.get("/{user_id}", response_model=UserDetailResponse)
+async def get_user(user_id: str, request: Request) -> UserDetailResponse:
+    """Return a single user with their roles."""
+    await _require_admin(request)
+    repo: UserRepository = request.app.state.user_repo
+    pool = request.app.state.db_pool
+    user = await repo.find_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Fetch email/full_name via join
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT COALESCE(la.email, convert_from(u.email_encrypted, 'UTF8')) AS email,
+                   convert_from(u.full_name_encrypted, 'UTF8') AS full_name
+            FROM users u LEFT JOIN user_local_auth la ON la.user_id = u.id
+            WHERE u.id = $1::uuid
+            """,
+            user_id,
+        )
+    roles = await repo.get_user_roles(user_id)
+    return UserDetailResponse(
+        **{k: v for k, v in user.items() if k in ("id", "keycloak_id", "email_hash", "approval_status", "created_at")},
+        roles=roles,
+        email=row["email"] if row else "",
+        full_name=row["full_name"] if row else "",
+    )
+
+
+@router.put("/{user_id}", response_model=UserDetailResponse)
+async def update_user(user_id: str, body: UpdateUserRequest, request: Request) -> UserDetailResponse:
+    """Update a user's approval_status and/or roles."""
+    await _require_admin(request)
+    actor = request.state.user
+    repo: UserRepository = request.app.state.user_repo
+
+    existing = await repo.find_by_id(user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if body.approval_status:
+        await repo.update_approval_status(user_id, body.approval_status)
+    if body.roles is not None:
+        await repo.revoke_roles(user_id)
+        await repo.assign_roles(user_id, body.roles)
+
+    await _post_audit_log(
+        actor_id=actor.sub,
+        action="user.updated",
+        resource_id=user_id,
+        outcome="success",
+        metadata={"approval_status": body.approval_status, "roles": body.roles},
+    )
+
+    updated = await repo.find_by_id(user_id)
+    roles = await repo.get_user_roles(user_id)
+    pool = request.app.state.db_pool
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT COALESCE(la.email, convert_from(u.email_encrypted, 'UTF8')) AS email,
+                   convert_from(u.full_name_encrypted, 'UTF8') AS full_name
+            FROM users u LEFT JOIN user_local_auth la ON la.user_id = u.id
+            WHERE u.id = $1::uuid
+            """,
+            user_id,
+        )
+    return UserDetailResponse(
+        **{k: v for k, v in updated.items() if k in ("id", "keycloak_id", "email_hash", "approval_status", "created_at")},  # type: ignore[union-attr]
+        roles=roles,
+        email=row["email"] if row else "",
+        full_name=row["full_name"] if row else "",
+    )
+
+
+@router.delete("/{user_id}", status_code=204)
+async def delete_user(user_id: str, request: Request) -> None:
+    """Hard-delete a user. Cascades to sessions, roles, and profile data."""
+    await _require_admin(request)
+    actor = request.state.user
+    repo: UserRepository = request.app.state.user_repo
+
+    existing = await repo.find_by_id(user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await repo.delete_user(user_id)
+
+    await _post_audit_log(
+        actor_id=actor.sub,
+        action="user.deleted",
+        resource_id=user_id,
+        outcome="success",
     )

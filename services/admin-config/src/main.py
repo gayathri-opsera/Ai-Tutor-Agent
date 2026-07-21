@@ -18,18 +18,57 @@ from src.service import AdminConfigService, DB_DSN
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
+_log = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
     app.state.admin_config = AdminConfigService(pool=pool)
     app.state.user_repo = UserRepository(pool=pool)
+    app.state.db_pool = pool  # exposed for self-registration endpoints
+    # Ensure standard roles exist (idempotent seed)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO roles (name, description) VALUES
+              ('Admin',      'Platform administrator'),
+              ('SuperAdmin', 'Super administrator with all privileges'),
+              ('Creator',    'Course creator and content manager'),
+              ('Learner',    'Course learner')
+            ON CONFLICT (name) DO NOTHING
+            """
+        )
     yield
     await pool.close()
 
 
 app = FastAPI(title="Admin Configuration Service", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# ── JWT auth middleware — validates Bearer tokens (or mock-jwt-* in dev) ──────
+# libs/auth is on PYTHONPATH via Dockerfile.service so we import directly.
+try:
+    from middleware import AuthMiddleware  # noqa: PLC0415
+
+    async def _check_approval(keycloak_id: str) -> str:
+        """Fetch approval_status from DB for the authenticated user."""
+        repo: UserRepository = app.state.user_repo
+        return await repo.get_approval_status(keycloak_id) or "approved"
+
+    app.add_middleware(
+        AuthMiddleware,
+        exclude_paths=["/health", "/ready", "/metrics", "/docs", "/openapi.json",
+                       "/api/v1/auth/self-register", "/api/v1/auth/mock-login"],
+        approval_checker=_check_approval,
+        # Public registration/login endpoints bypass auth entirely
+        approval_exclude_paths=["/api/v1/auth/register",
+                                 "/api/v1/auth/self-register",
+                                 "/api/v1/auth/mock-login"],
+    )
+except ImportError:
+    _log.warning("AuthMiddleware unavailable — running without auth enforcement")
+
 app.include_router(config_router)
 app.include_router(auth_router)
 app.include_router(admin_users_router)

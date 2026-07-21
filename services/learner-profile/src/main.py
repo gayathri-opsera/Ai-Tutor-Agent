@@ -19,6 +19,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=5)
     app.state.profile_service = LearnerProfileService(pool=pool)
+    app.state.db_pool = pool  # exposed for enrollment endpoints
     yield
     await pool.close()
 

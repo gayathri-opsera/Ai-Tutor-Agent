@@ -29,6 +29,56 @@ class LessonProgress(BaseModel):
     completed: bool
 
 
+class EnrollRequest(BaseModel):
+    kb_id: str
+
+
+@router.get("/enrollments")
+async def list_enrollments(user_id: str = "demo-user", request: Request = None):
+    """Return list of KB IDs the user is enrolled in."""
+    pool = request.app.state.db_pool
+    rows = await pool.fetch(
+        "SELECT kb_id::text FROM enrollments WHERE user_id = (SELECT id FROM users WHERE keycloak_id = $1 OR id::text = $1 LIMIT 1)",
+        user_id,
+    )
+    return {"enrolled_kb_ids": [r["kb_id"] for r in rows]}
+
+
+@router.post("/enroll")
+async def enroll(body: EnrollRequest, user_id: str = "demo-user", request: Request = None):
+    """Enroll the user in a course (knowledge base)."""
+    pool = request.app.state.db_pool
+    # Resolve user UUID
+    user_row = await pool.fetchrow(
+        "SELECT id FROM users WHERE keycloak_id = $1 OR id::text = $1 LIMIT 1", user_id
+    )
+    if not user_row:
+        return {"ok": False, "error": "User not found"}
+    uid = user_row["id"]
+    await pool.execute(
+        "INSERT INTO enrollments (user_id, kb_id) VALUES ($1, $2::uuid) ON CONFLICT DO NOTHING",
+        uid, body.kb_id,
+    )
+    return {"ok": True, "kb_id": body.kb_id}
+
+
+@router.delete("/enroll/{kb_id}")
+async def unenroll(kb_id: str, user_id: str = "demo-user", request: Request = None):
+    """Unenroll the user from a course."""
+    pool = request.app.state.db_pool
+    user_row = await pool.fetchrow(
+        "SELECT id FROM users WHERE keycloak_id = $1 OR id::text = $1 LIMIT 1", user_id
+    )
+    if not user_row:
+        return {"ok": False, "error": "User not found"}
+    uid = user_row["id"]
+    await pool.execute(
+        "DELETE FROM enrollments WHERE user_id = $1 AND kb_id = $2::uuid",
+        uid, kb_id,
+    )
+    return {"ok": True, "kb_id": kb_id}
+
+
 @router.get("/profile")
 async def get_profile(user_id: str = "demo-user", request: Request = None):
     svc = request.app.state.profile_service

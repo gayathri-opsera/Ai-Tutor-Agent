@@ -210,18 +210,33 @@ class LearnerProfileService:
                 user_id,
             )
             # Lesson progress for completion %
+            await self._ensure_lesson_table(conn)
             lesson_rows = await conn.fetch(
-                "SELECT status FROM local_lesson_progress WHERE user_id = $1",
+                "SELECT completed FROM local_lesson_progress WHERE user_id = $1",
                 user_id,
             )
+            # Total active documents across ALL approved knowledge bases.
+            # Courses the learner hasn't started yet still count toward the total
+            # so that overall_completion_percent can never exceed 100%.
+            total_lessons_row = await conn.fetchrow(
+                """
+                SELECT COUNT(DISTINCT d.id) AS total
+                FROM documents d
+                JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id
+                WHERE kb.approval_status = 'approved'::kb_approval_status_enum
+                  AND d.status = 'active'
+                """,
+            )
+            total_lessons_in_db = int(total_lessons_row["total"] or 0) if total_lessons_row else 0
             # Topic scores for topic breakdown
             topic_rows = await conn.fetch(
                 "SELECT topic, score, knowledge_base_id FROM local_topic_progress WHERE user_id = $1",
                 user_id,
             )
 
-        total_lessons    = len(lesson_rows)
-        completed_lessons = sum(1 for r in lesson_rows if r["status"] == "completed")
+        completed_lessons = sum(1 for r in lesson_rows if r["completed"])
+        # Use actual document count as denominator to prevent >100%.
+        total_lessons = max(total_lessons_in_db, len(lesson_rows))
         overall_pct = round((completed_lessons / total_lessons) * 100, 1) if total_lessons else 0.0
 
         assessment_scores = [
