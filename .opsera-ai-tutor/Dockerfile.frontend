@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install deps first (uses cache when package.json unchanged)
 COPY frontend/package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Build production bundle
 COPY frontend/ .
