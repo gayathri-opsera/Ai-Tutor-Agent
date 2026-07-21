@@ -1,0 +1,179 @@
+name: "Monitor — Pod Logs"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tail_lines:
+        description: 'Lines to tail per pod'
+        required: false
+        default: '50'
+      namespace:
+        description: 'Kubernetes namespace'
+        required: false
+        default: 'opsera-ai-tutor-dev'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-west-2
+  SPOKE_CLUSTER: opsera-usw2-np
+
+jobs:
+  collect-logs:
+    name: "Collect Pod Logs"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Connect to Cluster
+        run: aws eks update-kubeconfig --name ${{ env.SPOKE_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+      - name: Pod Status Overview
+        run: |
+          NS="${{ inputs.namespace }}"
+          echo "══════════════════════════════════════════"
+          echo "  POD STATUS — namespace: $NS"
+          echo "══════════════════════════════════════════"
+          kubectl get pods -n $NS -o wide
+          echo ""
+          echo "══════════════════════════════════════════"
+          echo "  RECENT EVENTS (warnings only)"
+          echo "══════════════════════════════════════════"
+          kubectl get events -n $NS --field-selector type=Warning --sort-by='.lastTimestamp' | tail -20 || true
+
+      - name: Frontend Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  FRONTEND"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=frontend --tail=$LINES --prefix 2>/dev/null || echo "No frontend pods found"
+
+      - name: Chat Orchestrator Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  CHAT-ORCHESTRATOR"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=chat-orchestrator --tail=$LINES --prefix 2>/dev/null || echo "No chat-orchestrator pods"
+
+      - name: RAG Pipeline Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  RAG-PIPELINE"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=rag-pipeline --tail=$LINES --prefix 2>/dev/null || echo "No rag-pipeline pods"
+
+      - name: Content Management Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  CONTENT-MANAGEMENT"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=content-management --tail=$LINES --prefix 2>/dev/null || echo "No content-management pods"
+
+      - name: Content Ingestion Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  CONTENT-INGESTION"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=content-ingestion --tail=$LINES --prefix 2>/dev/null || echo "No content-ingestion pods"
+
+      - name: LLM Gateway Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  LLM-GATEWAY"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=llm-gateway --tail=$LINES --prefix 2>/dev/null || echo "No llm-gateway pods"
+
+      - name: Embedding Service Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  EMBEDDING-SERVICE"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=embedding-service --tail=$LINES --prefix 2>/dev/null || echo "No embedding-service pods"
+
+      - name: Agent Reasoning Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  AGENT-REASONING"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=agent-reasoning --tail=$LINES --prefix 2>/dev/null || echo "No agent-reasoning pods"
+
+      - name: Confidence Grader Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  CONFIDENCE-GRADER"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=confidence-grader --tail=$LINES --prefix 2>/dev/null || echo "No confidence-grader pods"
+
+      - name: Learner Profile Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  LEARNER-PROFILE"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=learner-profile --tail=$LINES --prefix 2>/dev/null || echo "No learner-profile pods"
+
+      - name: Admin Config Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  ADMIN-CONFIG"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS -l app=admin-config --tail=$LINES --prefix 2>/dev/null || echo "No admin-config pods"
+
+      - name: Postgres Logs
+        run: |
+          NS="${{ inputs.namespace }}"
+          LINES="${{ inputs.tail_lines }}"
+          echo "══════════════════════════════════════════"
+          echo "  POSTGRES"
+          echo "══════════════════════════════════════════"
+          kubectl logs -n $NS postgres-0 --tail=$LINES 2>/dev/null || echo "No postgres pod"
+
+      - name: CrashLoopBackOff Check
+        run: |
+          NS="${{ inputs.namespace }}"
+          echo "══════════════════════════════════════════"
+          echo "  PODS NOT RUNNING (CrashLoop / Error / Pending)"
+          echo "══════════════════════════════════════════"
+          UNHEALTHY=$(kubectl get pods -n $NS --no-headers | grep -v "Running\|Completed" || true)
+          if [ -z "$UNHEALTHY" ]; then
+            echo "✅ All pods are Running or Completed"
+          else
+            echo "$UNHEALTHY"
+            echo ""
+            echo "--- Logs for unhealthy pods ---"
+            kubectl get pods -n $NS --no-headers | grep -v "Running\|Completed" | awk '{print $1}' | while read POD; do
+              echo "=== $POD ==="
+              kubectl logs -n $NS $POD --tail=30 --previous 2>/dev/null || kubectl logs -n $NS $POD --tail=30 2>/dev/null || echo "No logs available"
+            done
+          fi
