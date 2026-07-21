@@ -27,12 +27,82 @@ spec:
               CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
               DO \$\$ BEGIN
+                CREATE TYPE data_classification_enum AS ENUM ('PUBLIC','INTERNAL','CONFIDENTIAL','RESTRICTED');
+              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
+
+              DO \$\$ BEGIN
+                CREATE TYPE approval_status_enum AS ENUM ('pending','approved','rejected','suspended');
+              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
+
+              DO \$\$ BEGIN
                 CREATE TYPE content_type_enum AS ENUM ('pdf','docx','mp4','mp3','wav','url','text');
               EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
 
               DO \$\$ BEGIN
                 CREATE TYPE document_status_enum AS ENUM ('active','retired','processing','failed');
               EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
+
+              DO \$\$ BEGIN
+                CREATE TYPE kb_approval_status_enum AS ENUM ('draft','pending_review','approved','rejected','clarification_requested');
+              EXCEPTION WHEN duplicate_object THEN NULL; END \$\$;
+
+              -- roles
+              CREATE TABLE IF NOT EXISTS roles (
+                id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                name             VARCHAR(50) NOT NULL UNIQUE,
+                description      TEXT,
+                created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                data_classification data_classification_enum NOT NULL DEFAULT 'INTERNAL'
+              );
+
+              -- users
+              CREATE TABLE IF NOT EXISTS users (
+                id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                email_encrypted      BYTEA NOT NULL DEFAULT '\x00',
+                email_hash           VARCHAR(64) NOT NULL UNIQUE,
+                full_name_encrypted  BYTEA NOT NULL DEFAULT '\x00',
+                keycloak_id          VARCHAR(255) UNIQUE,
+                is_active            BOOLEAN NOT NULL DEFAULT true,
+                created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                data_classification  data_classification_enum NOT NULL DEFAULT 'CONFIDENTIAL'
+              );
+              ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status approval_status_enum NOT NULL DEFAULT 'approved';
+              CREATE INDEX IF NOT EXISTS ix_users_email_hash       ON users(email_hash);
+              CREATE INDEX IF NOT EXISTS ix_users_keycloak_id      ON users(keycloak_id);
+              CREATE INDEX IF NOT EXISTS ix_users_approval_status  ON users(approval_status);
+
+              -- user_roles
+              CREATE TABLE IF NOT EXISTS user_roles (
+                user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role_id     UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+                assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                data_classification data_classification_enum NOT NULL DEFAULT 'INTERNAL',
+                PRIMARY KEY (user_id, role_id)
+              );
+              CREATE INDEX IF NOT EXISTS ix_user_roles_user_id ON user_roles(user_id);
+
+              -- user_local_auth (self-registration, mock/dev mode)
+              CREATE TABLE IF NOT EXISTS user_local_auth (
+                id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                user_id       UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                email         TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                desired_role  TEXT NOT NULL DEFAULT 'Learner',
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE INDEX IF NOT EXISTS ix_user_local_auth_email ON user_local_auth(email);
+
+              -- enrollments (added for course enrollment feature)
+              CREATE TABLE IF NOT EXISTS enrollments (
+                user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kb_id      UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+                enrolled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (user_id, kb_id)
+              );
+              CREATE INDEX IF NOT EXISTS ix_enrollments_user ON enrollments(user_id);
+              CREATE INDEX IF NOT EXISTS ix_enrollments_kb   ON enrollments(kb_id);
 
               CREATE TABLE IF NOT EXISTS knowledge_bases (
                 id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -44,6 +114,14 @@ spec:
               );
               CREATE INDEX IF NOT EXISTS ix_knowledge_bases_org
                 ON knowledge_bases(organization_id, is_active);
+              -- add columns introduced by later migrations
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id);
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS approval_status kb_approval_status_enum NOT NULL DEFAULT 'approved';
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS ai_overview TEXT;
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS clarification_message TEXT;
+              ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS age_group TEXT;
 
               CREATE TABLE IF NOT EXISTS documents (
                 id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
