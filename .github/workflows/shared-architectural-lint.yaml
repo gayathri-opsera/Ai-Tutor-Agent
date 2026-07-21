@@ -41,11 +41,21 @@ jobs:
       - name: Check for Python source directory
         id: check_python
         run: |
-          if [ -d "${{ inputs.service_path }}/src" ]; then
+          SERVICE_PATH="${{ inputs.service_path }}"
+          # Compute relative path to .importlinter from the service directory
+          DEPTH=$(echo "$SERVICE_PATH" | awk -F'/' '{print NF}')
+          DOTS=$(python3 -c "print('../' * $DEPTH, end='')")
+          IMPORTLINTER_PATH="${DOTS}.importlinter"
+
+          if [ -d "$SERVICE_PATH/src" ] && [ -f "$IMPORTLINTER_PATH" ]; then
             echo "has_python=true" >> $GITHUB_OUTPUT
           else
             echo "has_python=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  No src/ directory found in ${{ inputs.service_path }} — skipping architectural lint"
+            if [ ! -d "$SERVICE_PATH/src" ]; then
+              echo "ℹ️  No src/ directory found in $SERVICE_PATH — skipping architectural lint"
+            else
+              echo "ℹ️  No .importlinter reachable from $SERVICE_PATH (non-Python service) — skipping"
+            fi
           fi
 
       - name: Install import-linter and dependencies
