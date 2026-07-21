@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: audit
-          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-audit:dev-f738904-20260721181730
+          image: 792373136340.dkr.ecr.us-west-2.amazonaws.com/opsera/ai-tutor-audit:dev-9c65447-20260721191525
