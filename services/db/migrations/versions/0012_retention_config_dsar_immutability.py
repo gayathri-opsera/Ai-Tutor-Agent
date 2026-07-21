@@ -37,13 +37,13 @@ def upgrade() -> None:
     # Seed retention config values
     op.execute(
         """
-        INSERT INTO admin_configurations (config_key, config_value, description)
+        INSERT INTO admin_configurations (organization_id, config_key, config_value, description)
         VALUES
-          ('audit_retention_days', '365',
+          ('system', 'audit_retention_days', '"365"',
            'Number of days to retain audit_logs records before purge'),
-          ('assessment_retention_days', '1095',
+          ('system', 'assessment_retention_days', '"1095"',
            'Number of days to retain assessment_results records (3 years)')
-        ON CONFLICT (config_key) DO NOTHING
+        ON CONFLICT (organization_id, config_key) DO NOTHING
         """
     )
 

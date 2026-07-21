@@ -37,7 +37,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from src.jwt_validator import JWTValidationError, JWTValidator, TokenPayload
+from jwt_validator import JWTValidationError, JWTValidator, TokenPayload
 
 _SERVICE_TOKEN = os.getenv("SERVICE_INTERNAL_TOKEN", "")
 _DEFAULT_MAX_BODY = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024)))  # 10 MB

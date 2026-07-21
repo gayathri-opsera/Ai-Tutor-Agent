@@ -55,6 +55,7 @@ class IngestRequest(BaseModel):
     knowledge_base_id: str
     document_title: str
     chunks: list[IngestChunk]
+    force: bool = False  # bypass dedup and always re-embed (used during re-index)
 
 
 __all__ = [

@@ -8,7 +8,7 @@ from typing import Any
 import jwt
 from jwt import PyJWKClient
 
-from src.config import AuthSettings, settings
+from config import AuthSettings, settings
 
 
 class JWTValidationError(Exception):
@@ -27,6 +27,31 @@ class TokenPayload:
         return role in self.roles
 
 
+# ── Dev-mode mock token roster ────────────────────────────────────────────────
+# These identities match the MOCK_CREDENTIALS in frontend/src/auth/keycloak.ts.
+# Only active when AUTH_MOCK=true.
+_MOCK_TOKENS: dict[str, TokenPayload] = {
+    "mock-jwt-admin": TokenPayload(
+        sub="aaaaaaaa-0001-0000-0000-000000000001",
+        iss="mock",
+        exp=int(time.time()) + 86400 * 365,  # 1 year
+        roles=["Admin", "Creator", "Learner"],
+    ),
+    "mock-jwt-creator": TokenPayload(
+        sub="cccccccc-0002-0000-0000-000000000002",
+        iss="mock",
+        exp=int(time.time()) + 86400 * 365,
+        roles=["Creator", "Learner"],
+    ),
+    "mock-jwt-learner": TokenPayload(
+        sub="dddddddd-0003-0000-0000-000000000003",
+        iss="mock",
+        exp=int(time.time()) + 86400 * 365,
+        roles=["Learner"],
+    ),
+}
+
+
 class JWTValidator:
     """Validates JWTs against Keycloak JWKS or a static public key."""
 
@@ -40,13 +65,32 @@ class JWTValidator:
         self._jwks_client: PyJWKClient | None = None
 
     def decode(self, token: str) -> TokenPayload:
-        """Decode and validate a JWT. Raises JWTValidationError on failure."""
+        """Decode and validate a JWT. Raises JWTValidationError on failure.
+
+        When AUTH_MOCK=true, recognises mock-jwt-* tokens issued by the
+        frontend dev roster and returns the corresponding TokenPayload without
+        hitting Keycloak JWKS.
+        """
         if not token or not isinstance(token, str):
             raise JWTValidationError("Token is missing or malformed")
 
         token = token.strip()
         if token.lower().startswith("bearer "):
             token = token[7:].strip()
+
+        # Dev-mode mock token bypass — only when AUTH_MOCK=true
+        if self._settings.mock and token in _MOCK_TOKENS:
+            return _MOCK_TOKENS[token]
+
+        # Self-registered user token (mock-reg-<user_id>) — resolve from DB lazily
+        if self._settings.mock and token.startswith("mock-reg-"):
+            user_id = token[len("mock-reg-"):]
+            return TokenPayload(
+                sub=f"local-{user_id}",
+                iss="mock",
+                exp=int(time.time()) + 86400,
+                roles=["Learner"],  # roles verified downstream by middleware via DB
+            )
 
         try:
             key = self._resolve_key(token)

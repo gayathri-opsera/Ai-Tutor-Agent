@@ -21,7 +21,10 @@ from typing import AsyncIterator, Any
 
 import httpx
 
-from src.provider import ModelProvider
+try:
+    from provider import ModelProvider  # when libs/model/src/ is in PYTHONPATH
+except ImportError:
+    from libs.model.src.provider import ModelProvider  # when /app is in PYTHONPATH
 
 _LLM_GATEWAY_URL = os.getenv("LLM_GATEWAY_URL", "http://llm-gateway:8004")
 _DEFAULT_MODEL    = os.getenv("LLM_DEFAULT_MODEL", "claude-sonnet-4-5")
@@ -61,7 +64,7 @@ class GatewayModelProvider(ModelProvider):
         }
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.post(
-                f"{self._base_url}/api/v1/llm/complete",
+                f"{self._base_url}/api/internal/llm/complete",
                 json=payload,
                 headers=self._auth_headers(),
             )
@@ -79,7 +82,7 @@ class GatewayModelProvider(ModelProvider):
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             async with client.stream(
                 "POST",
-                f"{self._base_url}/api/v1/llm/stream",
+                f"{self._base_url}/api/internal/llm/stream",
                 json=payload,
                 headers=self._auth_headers(),
             ) as resp:
@@ -92,7 +95,7 @@ class GatewayModelProvider(ModelProvider):
         payload = {"texts": texts, "model": model or "text-embedding-ada-002"}
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{self._base_url}/api/v1/llm/embed",
+                f"{self._base_url}/api/internal/llm/embed",
                 json=payload,
                 headers=self._auth_headers(),
             )

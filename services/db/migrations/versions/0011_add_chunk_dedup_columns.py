@@ -20,16 +20,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # document_chunks table (production)
-    op.add_column("document_chunks", sa.Column("content_hash", sa.Text(), nullable=True))
-    op.add_column(
-        "document_chunks",
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
+    # document_chunks table (production) — use IF NOT EXISTS to be idempotent
+    op.execute(
+        "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS content_hash TEXT"
+    )
+    op.execute(
+        "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS "
+        "updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL"
     )
     # Create unique constraint for dedup upsert ON CONFLICT (document_id, chunk_index)
     op.execute(
@@ -47,25 +44,32 @@ def upgrade() -> None:
         END $$;
         """
     )
-    # Mirror on local dev table
+    # Mirror on local dev table (may not exist in all environments)
     op.execute(
         """
-        ALTER TABLE local_document_chunks
-        ADD COLUMN IF NOT EXISTS content_hash TEXT,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'local_document_chunks') THEN
+                ALTER TABLE local_document_chunks
+                ADD COLUMN IF NOT EXISTS content_hash TEXT,
+                ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+            END IF;
+        END $$;
         """
     )
     op.execute(
         """
         DO $$
         BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'uq_local_document_chunks_doc_idx'
-            ) THEN
-                ALTER TABLE local_document_chunks
-                ADD CONSTRAINT uq_local_document_chunks_doc_idx
-                UNIQUE (document_id, chunk_index);
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'local_document_chunks') THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'uq_local_document_chunks_doc_idx'
+                ) THEN
+                    ALTER TABLE local_document_chunks
+                    ADD CONSTRAINT uq_local_document_chunks_doc_idx
+                    UNIQUE (document_id, chunk_index);
+                END IF;
             END IF;
         END $$;
         """

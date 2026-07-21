@@ -37,7 +37,8 @@ services:
     environment:
       POSTGRES_DB: ai_tutor
       POSTGRES_USER: ai_tutor
-      POSTGRES_PASSWORD: ai_tutor_local_password
+      # Set POSTGRES_PASSWORD in .env — never commit credentials to git
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_tutor_local_password}
     ports:
       - "5432:5432"
     volumes:
@@ -72,7 +73,8 @@ services:
       QUERY_DEFAULTS_LIMIT: 25
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "false"
       AUTHENTICATION_APIKEY_ENABLED: "true"
-      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "local-dev-key"
+      # Set WEAVIATE_API_KEY in .env for production
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: ${WEAVIATE_API_KEY:-local-dev-key}
       AUTHENTICATION_APIKEY_USERS: "ai-tutor-service"
       PERSISTENCE_DATA_PATH: /var/lib/weaviate
       DEFAULT_VECTORIZER_MODULE: none
@@ -93,8 +95,9 @@ services:
       - "9100:9000"
       - "9101:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      # Set MINIO_ROOT_USER / MINIO_ROOT_PASSWORD in .env for production
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
@@ -114,7 +117,7 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} &&
         mc mb --ignore-existing local/ai-tutor-content &&
         echo 'MinIO bucket ready'
       "
@@ -160,6 +163,10 @@ services:
       - "18000:8000"
     environment:
       PORT: "8000"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-anthropic}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/internal/llm/health || exit 1"]
       <<: *python-healthcheck
@@ -173,9 +180,11 @@ services:
         SERVICE: embedding-service
         PORT: "8001"
     ports:
-      - "8001:8001"
+      - "18001:8001"
     environment:
       PORT: "8001"
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-sentence_transformers}
+      ST_MODEL_NAME: "paraphrase-multilingual-MiniLM-L12-v2"
     depends_on:
       llm-gateway:
         condition: service_healthy
@@ -192,9 +201,11 @@ services:
         SERVICE: rag-pipeline
         PORT: "8002"
     ports:
-      - "8002:8002"
+      - "18002:8002"
     environment:
       PORT: "8002"
+      WEAVIATE_URL: ${WEAVIATE_URL:-http://weaviate:8080}
+      WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:-local-dev-key}
     depends_on:
       embedding-service:
         condition: service_healthy
@@ -210,7 +221,7 @@ services:
       context: .
       dockerfile: Dockerfile.content-ingestion
     ports:
-      - "8003:8003"
+      - "18003:8003"
     environment:
       PORT: "8003"
     depends_on:
@@ -233,7 +244,7 @@ services:
         SERVICE: chat-orchestrator
         PORT: "8004"
     ports:
-      - "8004:8004"
+      - "18004:8004"
     environment:
       PORT: "8004"
     depends_on:
@@ -258,7 +269,7 @@ services:
         SERVICE: agent-reasoning
         PORT: "8005"
     ports:
-      - "8005:8005"
+      - "18005:8005"
     environment:
       PORT: "8005"
     depends_on:
@@ -277,7 +288,7 @@ services:
         SERVICE: confidence-grader
         PORT: "8006"
     ports:
-      - "8006:8006"
+      - "18006:8006"
     environment:
       PORT: "8006"
     depends_on:
@@ -298,9 +309,10 @@ services:
         SERVICE: content-management
         PORT: "8007"
     ports:
-      - "8007:8007"
+      - "18007:8007"
     environment:
       PORT: "8007"
+      AUTH_MOCK: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -317,7 +329,7 @@ services:
         SERVICE: learner-profile
         PORT: "8008"
     ports:
-      - "8008:8008"
+      - "18008:8008"
     environment:
       PORT: "8008"
     depends_on:
@@ -336,9 +348,11 @@ services:
         SERVICE: admin-config
         PORT: "8009"
     ports:
-      - "8009:8009"
+      - "18009:8009"
     environment:
       PORT: "8009"
+      # Enable mock-JWT bypass so dev tokens (mock-jwt-admin etc.) are accepted
+      AUTH_MOCK: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -355,7 +369,7 @@ services:
         SERVICE: assessment
         PORT: "8010"
     ports:
-      - "8010:8010"
+      - "18010:8010"
     environment:
       PORT: "8010"
     depends_on:
@@ -374,7 +388,7 @@ services:
         SERVICE: analytics
         PORT: "8011"
     ports:
-      - "8011:8011"
+      - "18011:8011"
     environment:
       PORT: "8011"
     depends_on:
@@ -393,7 +407,7 @@ services:
         SERVICE: audit
         PORT: "8012"
     ports:
-      - "8012:8012"
+      - "18012:8012"
     environment:
       PORT: "8012"
     depends_on:
@@ -420,6 +434,7 @@ services:
       - ./frontend/vite.config.ts:/app/vite.config.ts  # live proxy config
     environment:
       VITE_API_BASE_URL: http://localhost
+      VITE_AUTH_MOCK: 'true'
       VITE_KEYCLOAK_URL: http://localhost:8180
       VITE_KEYCLOAK_REALM: ai-tutor
       VITE_KEYCLOAK_CLIENT_ID: ai-tutor-frontend

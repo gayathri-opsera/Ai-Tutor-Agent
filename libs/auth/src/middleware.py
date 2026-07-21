@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from src.jwt_validator import JWTValidationError, JWTValidator, TokenPayload
+from jwt_validator import JWTValidationError, JWTValidator, TokenPayload
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -76,21 +76,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self.approval_checker is not None and not any(
             request.url.path.startswith(p) for p in self.approval_exclude_paths
         ):
-            try:
-                approval_status: str = await self.approval_checker(user.sub)
-            except Exception:
-                # Fail secure: treat unknown status as pending
-                approval_status = "pending"
+            # Admins and SuperAdmins bypass the approval gate — they are trusted operators.
+            if not any(r in {"Admin", "SuperAdmin"} for r in (user.roles or [])):
+                try:
+                    approval_status: str = await self.approval_checker(user.sub)
+                except Exception:
+                    # Fail secure: treat unknown status as pending
+                    approval_status = "pending"
 
-            if approval_status == "pending":
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Account pending approval"},
-                )
-            if approval_status == "rejected":
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Account rejected"},
-                )
+                if approval_status == "pending":
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Account pending approval"},
+                    )
+                if approval_status == "rejected":
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Account rejected"},
+                    )
 
         return await call_next(request)

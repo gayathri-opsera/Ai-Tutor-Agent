@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -54,10 +55,55 @@ class VectorDBClient:
             return
         try:
             import weaviate  # type: ignore
-            self._weaviate = weaviate.Client(url)
+            api_key = os.getenv("WEAVIATE_API_KEY", "")
+            if api_key:
+                auth = weaviate.AuthApiKey(api_key=api_key)
+                self._weaviate = weaviate.Client(url, auth_client_secret=auth)
+            else:
+                self._weaviate = weaviate.Client(url)
+            self._ensure_schema()
         except Exception as exc:
             logger.warning("Weaviate connect failed: %s — using in-memory fallback", exc)
             self._mock = {}
+
+    def _ensure_schema(self) -> None:
+        """Create the DocumentChunk class in Weaviate if it doesn't exist yet."""
+        try:
+            existing = {c["class"] for c in (self._weaviate.schema.get().get("classes") or [])}
+            if "DocumentChunk" in existing:
+                # Ensure any missing properties are added (safe no-op if already present)
+                existing_props = {
+                    p["name"]
+                    for c in (self._weaviate.schema.get().get("classes") or [])
+                    if c["class"] == "DocumentChunk"
+                    for p in c.get("properties", [])
+                }
+                for prop_name in ("excerpt", "chunk_index", "document_id", "document_title", "text"):
+                    if prop_name not in existing_props:
+                        try:
+                            self._weaviate.schema.property.create("DocumentChunk", {
+                                "name": prop_name,
+                                "dataType": ["int"] if prop_name == "chunk_index" else ["text"],
+                            })
+                            logger.info("Added missing Weaviate property: %s", prop_name)
+                        except Exception:
+                            pass
+                return
+            self._weaviate.schema.create_class({
+                "class": "DocumentChunk",
+                "vectorizer": "none",
+                "properties": [
+                    {"name": "knowledge_base_id", "dataType": ["text"]},
+                    {"name": "document_id",        "dataType": ["text"]},
+                    {"name": "document_title",     "dataType": ["text"]},
+                    {"name": "text",               "dataType": ["text"]},
+                    {"name": "excerpt",            "dataType": ["text"]},
+                    {"name": "chunk_index",        "dataType": ["int"]},
+                ],
+            })
+            logger.info("Created Weaviate DocumentChunk schema")
+        except Exception as exc:
+            logger.warning("Schema ensure failed: %s", exc)
 
     async def upsert_vectors(
         self,
@@ -91,12 +137,24 @@ class VectorDBClient:
             return
         # Real Weaviate upsert
         for rec in vectors:
-            self._weaviate.data_object.create(
-                data_object={**rec.metadata, "_namespace": namespace},
-                class_name="DocumentChunk",
-                uuid=rec.id,
-                vector=rec.vector,
-            )
+            # Strip mock-only '_namespace' key — Weaviate rejects properties with leading '_'
+            weaviate_obj = {k: v for k, v in rec.metadata.items() if not k.startswith("_")}
+            try:
+                # replace() is a true upsert: creates if absent, replaces if present
+                self._weaviate.data_object.replace(
+                    data_object=weaviate_obj,
+                    class_name="DocumentChunk",
+                    uuid=rec.id,
+                    vector=rec.vector,
+                )
+            except Exception:
+                # Fallback: create for objects that may not exist yet
+                self._weaviate.data_object.create(
+                    data_object=weaviate_obj,
+                    class_name="DocumentChunk",
+                    uuid=rec.id,
+                    vector=rec.vector,
+                )
 
     async def _query(
         self,
@@ -109,8 +167,11 @@ class VectorDBClient:
             return self._mock_query(query_vector, top_k, filters, namespace)
         # Real Weaviate query
         where_filter = self._build_weaviate_filter(filters, namespace)
+        # Always retrieve the core content properties; filter keys are used only for the where clause
+        _CORE_PROPS = ["knowledge_base_id", "document_id", "document_title", "text", "excerpt", "chunk_index"]
+        fetch_props = list({*_CORE_PROPS, *(filters.keys() if filters else [])})
         result = (
-            self._weaviate.query.get("DocumentChunk", list(filters.keys()) if filters else [])
+            self._weaviate.query.get("DocumentChunk", fetch_props)
             .with_near_vector({"vector": query_vector})
             .with_limit(top_k)
             .with_additional(["id", "distance"])
@@ -118,7 +179,7 @@ class VectorDBClient:
         if where_filter:
             result = result.with_where(where_filter)
         data = result.do()
-        chunks = data.get("data", {}).get("Get", {}).get("DocumentChunk", [])
+        chunks = (data.get("data", {}).get("Get", {}).get("DocumentChunk") or [])
         return [
             QueryResult(
                 id=c["_additional"]["id"],
@@ -158,14 +219,14 @@ class VectorDBClient:
         return results[:top_k]
 
     def _build_weaviate_filter(self, filters: dict | None, namespace: str) -> dict | None:
-        if not filters and not namespace:
+        # NOTE: The _namespace concept only applies to the in-memory mock store.
+        # In real Weaviate, isolation is achieved via the knowledge_base_id filter alone
+        # (Weaviate rejects property names starting with '_').
+        if not filters:
             return None
-        operands = [
-            {"path": ["_namespace"], "operator": "Equal", "valueString": namespace}
-        ]
-        if filters:
-            for k, v in filters.items():
-                operands.append({"path": [k], "operator": "Equal", "valueString": str(v)})
+        operands = []
+        for k, v in filters.items():
+            operands.append({"path": [k], "operator": "Equal", "valueString": str(v)})
         if len(operands) == 1:
             return operands[0]
         return {"operator": "And", "operands": operands}

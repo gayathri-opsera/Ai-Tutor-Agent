@@ -19,7 +19,7 @@ def upgrade() -> None:
     # which deletes sessions older than 7 days.
     op.execute(
         """
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_chat_sessions_created_at_active
+        CREATE INDEX IF NOT EXISTS ix_chat_sessions_created_at_active
         ON chat_sessions (created_at)
         WHERE is_active = true
         """
