@@ -23,7 +23,7 @@ try:
     from provider import get_db_dsn  # type: ignore[import]
     DB_DSN = get_db_dsn()
 except ImportError:
-    DB_DSN = os.environ["DATABASE_URL"]
+    DB_DSN = os.getenv("DATABASE_URL", "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor")
 
 # Explicit column projection — avoids fetching large metadata JSONB on list queries.
 _AUDIT_COLS = "id, actor_id, action, resource_type, resource_id, outcome, metadata, created_at"

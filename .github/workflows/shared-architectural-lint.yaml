@@ -64,9 +64,15 @@ jobs:
           echo "Using config: ../../.importlinter"
           echo ""
 
+          # Derive the contract name from the service directory name (e.g. services/audit → audit-layers)
+          # This scopes the analysis to only the current service's contract, preventing false failures
+          # when running from a service that doesn't have all layers (e.g. Kafka consumers, no src/api/).
+          SERVICE_NAME=$(basename "${{ inputs.service_path }}")
+          CONTRACT="${SERVICE_NAME}-layers"
+
           # Run lint-imports scoped to this service's src package.
           # Returns exit code 1 if any layer contract is violated.
-          lint-imports --config ../../.importlinter
+          lint-imports --config ../../.importlinter --contract "${CONTRACT}"
 
           echo ""
           echo "✅ No architectural layer violations in ${{ inputs.service_path }}"
