@@ -223,7 +223,7 @@ class LearnerProfileService:
                 SELECT COUNT(DISTINCT d.id) AS total
                 FROM documents d
                 JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id
-                WHERE kb.approval_status = 'approved'::kb_approval_status_enum
+                WHERE kb.approval_status = 'approved'
                   AND d.status = 'active'
                 """,
             )

@@ -30,6 +30,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         Path prefixes that are exempt from the approval_status check but still
         require a valid JWT.  Defaults to ``["/api/v1/auth/register"]`` so that
         first-time OAuth users can self-register.
+    role_resolver : Callable[[str], Awaitable[list[str]]] | None
+        Optional async callback ``(user_id) -> list[roles]``.
+        When provided, called for mock-reg-* tokens (self-registered users) to
+        replace the default ["Learner"] placeholder with the user's actual DB roles.
+        The user_id argument is the UUID portion extracted from the "local-<uuid>" sub.
     """
 
     _DEFAULT_EXCLUDE = ["/health", "/ready", "/metrics", "/docs", "/openapi.json"]
@@ -42,6 +47,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         exclude_paths: list[str] | None = None,
         approval_checker: Callable[[str], Awaitable[str]] | None = None,
         approval_exclude_paths: list[str] | None = None,
+        role_resolver: Callable[[str], Awaitable[list[str]]] | None = None,
     ) -> None:
         super().__init__(app)
         self.validator = validator or JWTValidator()
@@ -52,6 +58,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if approval_exclude_paths is not None
             else self._DEFAULT_APPROVAL_EXCLUDE
         )
+        # Resolves actual DB roles for self-registered users (mock-reg-* tokens).
+        self.role_resolver = role_resolver
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Paths that bypass all auth (health/metrics/docs)
@@ -71,6 +79,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user = user
         except JWTValidationError as exc:
             return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+        # For self-registered users (mock-reg-* tokens) the JWT validator returns a
+        # placeholder roles=["Learner"].  Resolve actual DB roles when a resolver
+        # is configured so that Admin/Creator endpoints work correctly.
+        if self.role_resolver is not None and user.iss == "mock" and user.sub.startswith("local-"):
+            user_id = user.sub[len("local-"):]
+            try:
+                actual_roles = await self.role_resolver(user_id)
+                if actual_roles:
+                    user.roles = actual_roles
+            except Exception:
+                pass  # Keep placeholder roles on resolver failure rather than blocking the request
 
         # Approval-status gate (skipped for registration endpoint and similar paths)
         if self.approval_checker is not None and not any(

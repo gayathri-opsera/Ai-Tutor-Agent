@@ -56,11 +56,17 @@ try:
         repo: UserRepository = app.state.user_repo
         return await repo.get_approval_status(keycloak_id) or "approved"
 
+    async def _resolve_roles(user_id: str) -> list[str]:
+        """Look up actual DB roles for a self-registered user (mock-reg-* token)."""
+        repo: UserRepository = app.state.user_repo
+        return await repo.get_user_roles(user_id)
+
     app.add_middleware(
         AuthMiddleware,
         exclude_paths=["/health", "/ready", "/metrics", "/docs", "/openapi.json",
                        "/api/v1/auth/self-register", "/api/v1/auth/mock-login"],
         approval_checker=_check_approval,
+        role_resolver=_resolve_roles,
         # Public registration/login endpoints bypass auth entirely
         approval_exclude_paths=["/api/v1/auth/register",
                                  "/api/v1/auth/self-register",

@@ -111,12 +111,12 @@ class ContentManagementService:
             # Callers see approved KBs + their own KBs regardless of status.
             if approved_only and caller_keycloak_id:
                 approval_clause = (
-                    "AND (approval_status = 'approved'::kb_approval_status_enum "
+                    "AND (approval_status = 'approved' "
                     "     OR created_by_keycloak_id = $2)"
                 )
                 extra_params: list = [caller_keycloak_id]
             elif approved_only:
-                approval_clause = "AND approval_status = 'approved'::kb_approval_status_enum"
+                approval_clause = "AND approval_status = 'approved'"
                 extra_params = []
             else:
                 approval_clause = ""
@@ -381,7 +381,7 @@ class ContentManagementService:
                 SELECT id, name, description, organization_id,
                        approval_status, ai_overview, created_at
                 FROM knowledge_bases
-                WHERE approval_status = $1::kb_approval_status_enum
+                WHERE approval_status = $1
                   AND is_active = true
                 ORDER BY created_at ASC
                 LIMIT $2 OFFSET $3
@@ -390,7 +390,7 @@ class ContentManagementService:
             )
             total = await conn.fetchval(
                 "SELECT COUNT(*) FROM knowledge_bases "
-                "WHERE approval_status = $1::kb_approval_status_enum AND is_active = true",
+                "WHERE approval_status = $1 AND is_active = true",
                 status,
             )
         return (
@@ -416,7 +416,7 @@ class ContentManagementService:
             raise ValueError(f"Field {field!r} not allowed for update")
         # Use a safe lookup instead of direct string interpolation
         field_sql = {
-            "approval_status":        "approval_status = $2::kb_approval_status_enum",
+            "approval_status":        "approval_status = $2",
             "ai_overview":            "ai_overview = $2",
             "rejection_reason":       "rejection_reason = $2",
             "clarification_message":  "clarification_message = $2",

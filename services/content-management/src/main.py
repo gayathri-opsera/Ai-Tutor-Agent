@@ -127,10 +127,27 @@ try:
     import sys, os
     sys.path.insert(0, "/app/libs/auth/src")
     from middleware import AuthMiddleware  # noqa: PLC0415
+
+    async def _resolve_roles(user_id: str) -> list[str]:
+        """Look up actual DB roles for a self-registered user (mock-reg-* token)."""
+        pool = app.state.cms._pool if hasattr(app.state, "cms") else None
+        if pool is None:
+            return []
+        rows = await pool.fetch(
+            """
+            SELECT r.name FROM roles r
+            JOIN user_roles ur ON ur.role_id = r.id
+            WHERE ur.user_id = $1::uuid
+            """,
+            user_id,
+        )
+        return [r["name"] for r in rows]
+
     app.add_middleware(
         AuthMiddleware,
         approval_checker=None,  # content-management doesn't gate on approval
         approval_exclude_paths=[],
+        role_resolver=_resolve_roles,
     )
 except Exception:
     pass  # Auth library unavailable — admin checks fall back to None user
