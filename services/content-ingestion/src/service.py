@@ -24,6 +24,7 @@ DATABASE_URL: str = os.getenv(
     "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor",
 )
 RAG_SERVICE_URL: str = os.getenv("RAG_SERVICE_URL", "http://rag-pipeline:8002")
+_SERVICE_TOKEN: str = os.getenv("SERVICE_INTERNAL_TOKEN", "internal-service")
 
 # MinIO / S3 settings — local-dev defaults; set S3_ACCESS_KEY and S3_SECRET_KEY in production.
 S3_ENDPOINT  = os.getenv("S3_ENDPOINT",  "http://minio:9000")
@@ -323,11 +324,11 @@ class ContentIngestionService:
             )
 
         # Derive a clean title from the URL path
-        from urllib.parse import urlparse
+        from urllib.parse import urlparse, unquote
         parsed = urlparse(url)
         path_parts = [p for p in parsed.path.rstrip("/").split("/") if p]
-        title = path_parts[-1].replace("-", " ").replace("_", " ").title() if path_parts else parsed.netloc
-        title = f"{title} ({parsed.netloc})"
+        raw_title = path_parts[-1].replace("-", " ").replace("_", " ").title() if path_parts else parsed.netloc
+        title = f"{unquote(raw_title)} ({parsed.netloc})"
 
         full_text = "\n\n".join(chunks)
         doc_id = str(uuid.uuid4())
@@ -391,6 +392,7 @@ class ContentIngestionService:
         document_title: str,
         chunks: list[str],
         segment_metadata: list[dict] | None = None,
+        force: bool = False,
     ) -> None:
         """Send chunks to the RAG pipeline for embedding + vector store upsert."""
         chunk_items = []
@@ -408,11 +410,16 @@ class ContentIngestionService:
             "knowledge_base_id": knowledge_base_id,
             "document_title": document_title,
             "chunks": chunk_items,
+            "force": force,
         }
         async with httpx.AsyncClient(timeout=600.0) as client:  # 10 min for large docs
             resp = await client.post(
                 f"{RAG_SERVICE_URL}/api/internal/rag/ingest",
                 json=payload,
+                headers={
+                    "X-Service-Token": _SERVICE_TOKEN,
+                    "X-Service-Name": "content-ingestion",
+                },
             )
             resp.raise_for_status()
             data = resp.json()

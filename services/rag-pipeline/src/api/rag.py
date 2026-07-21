@@ -71,8 +71,8 @@ async def _do_ingest(body: IngestRequest, service, db_pool) -> None:
         for i, (chunk, abs_idx) in enumerate(zip(batch_chunks, abs_indices)):
             new_hash = hashlib.sha256(chunk.text.encode()).hexdigest()
             ex = existing_by_idx.get(abs_idx)
-            if ex and ex["content_hash"] == new_hash:
-                # Identical content — skip entirely
+            if not body.force and ex and ex["content_hash"] == new_hash:
+                # Identical content and not a forced re-index — skip embedding
                 logger.debug("Skipping unchanged chunk %d for document %s", abs_idx, body.document_id)
                 continue
             chunks_to_embed.append((i, abs_idx, chunk))

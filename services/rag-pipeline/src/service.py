@@ -9,8 +9,8 @@ import httpx
 from embedding import EmbedRequest  # shared contract from libs/contracts (WO-014)
 from src.hybrid_search import hybrid_search
 from src.reranker import reciprocal_rank_fusion
-from libs.model.src.provider import ModelProvider  # bundled via Dockerfile COPY libs/
-from libs.model.src.gateway_provider import GatewayModelProvider  # bundled via Dockerfile COPY libs/
+from provider import ModelProvider  # libs/model/src/ in PYTHONPATH via Dockerfile
+from gateway_provider import GatewayModelProvider  # libs/model/src/ in PYTHONPATH via Dockerfile
 
 logger = logging.getLogger(__name__)
 

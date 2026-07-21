@@ -15,7 +15,7 @@ from src.vector_client import VectorDBClient, VectorRecord
 from src.api.rag import router as rag_router
 from src.config import settings
 from src.service import RAGPipelineService
-from libs.auth.src.service_middleware import ServiceAuthMiddleware  # bundled via Dockerfile COPY libs/
+from service_middleware import ServiceAuthMiddleware  # libs/auth/src/ in PYTHONPATH via Dockerfile
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -126,8 +126,9 @@ async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
     app.state.db_pool = pool
 
-    # Connect to vector DB (Weaviate or in-memory fallback)
-    vector_client = VectorDBClient(_mock_store={})
+    # Connect to vector DB (Weaviate). Falls back to in-memory if Weaviate is
+    # unreachable (e.g. unit tests or no weaviate container running).
+    vector_client = VectorDBClient()
     await vector_client.connect(WEAVIATE_URL)
 
     rag_service = RAGPipelineService(vector_client, settings.embedding_service_url)
@@ -145,7 +146,11 @@ def create_app(rag_service=None) -> FastAPI:
     _app = FastAPI(title="RAG Pipeline", version="1.0.0", lifespan=lifespan)
     _app.add_middleware(GZipMiddleware, minimum_size=1000)
     _app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-    _app.add_middleware(ServiceAuthMiddleware)
+    _app.add_middleware(
+        ServiceAuthMiddleware,
+        # Internal paths are only reachable within the Docker network — no user JWT required.
+        exclude_paths=["/health", "/ready", "/metrics", "/docs", "/openapi.json", "/api/internal"],
+    )
     _app.include_router(rag_router)
     if rag_service is not None:
         _app.state.rag_service = rag_service

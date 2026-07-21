@@ -113,6 +113,7 @@ async def reindex_document(doc_id: str, background_tasks: BackgroundTasks, reque
                 knowledge_base_id=str(row["knowledge_base_id"]),
                 document_title=row["title"],
                 chunks=chunks,
+                force=True,
             )
         except Exception as exc:
             import logging
@@ -322,3 +323,52 @@ async def get_status(doc_id: str, request: Request):
     except Exception:
         pass
     raise HTTPException(404, "Document not found")
+
+
+@router.post("/reindex-kb/{kb_id}", status_code=202)
+async def reindex_knowledge_base(kb_id: str, background_tasks: BackgroundTasks, request: Request):
+    """Re-chunk and re-index all documents in a knowledge base using the current embedding backend.
+
+    Useful after switching embedding backends to regenerate semantic vectors from stored content_text.
+    """
+    svc = request.app.state.ingestion_service
+
+    async def _do_reindex():
+        import logging, textwrap
+        log = logging.getLogger(__name__)
+        try:
+            async with svc._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id::text, title, content_text
+                    FROM documents
+                    WHERE knowledge_base_id = $1::uuid
+                      AND content_text IS NOT NULL
+                      AND length(content_text) > 20
+                    """,
+                    kb_id,
+                )
+            log.info("Re-indexing %d documents for KB %s", len(rows), kb_id)
+            for row in rows:
+                doc_id = row["id"]
+                title  = row["title"]
+                text   = row["content_text"]
+                # Split into ~800-word chunks with 100-word overlap
+                words = text.split()
+                size, overlap = 800, 100
+                chunks, i = [], 0
+                while i < len(words):
+                    chunks.append(" ".join(words[i:i + size]))
+                    i += size - overlap
+                if not chunks:
+                    continue
+                try:
+                    await svc._index_chunks(doc_id, kb_id, title, chunks, force=True)
+                    log.info("Re-indexed %d chunks for document '%s'", len(chunks), title)
+                except Exception as exc:
+                    log.warning("Re-index failed for doc %s: %s", doc_id, exc)
+        except Exception as exc:
+            log.error("Re-index background task error: %s", exc)
+
+    background_tasks.add_task(_do_reindex)
+    return {"message": f"Re-indexing queued for knowledge base {kb_id}"}

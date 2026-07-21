@@ -25,6 +25,8 @@ class KnowledgeBase:
     is_active: bool = True
     age_group: str | None = None
     created_by_keycloak_id: str | None = None
+    approval_status: str = "pending_review"  # matches DB default
+    doc_count: int = 0
 
 
 @dataclass
@@ -73,7 +75,7 @@ class ContentManagementService:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, name, description, organization_id, is_active, "
-                "age_group, created_by_keycloak_id "
+                "age_group, created_by_keycloak_id, approval_status "
                 "FROM knowledge_bases WHERE id = $1",
                 kb_id,
             )
@@ -87,6 +89,7 @@ class ContentManagementService:
             is_active=row["is_active"],
             age_group=row.get("age_group"),
             created_by_keycloak_id=row.get("created_by_keycloak_id"),
+            approval_status=str(row.get("approval_status", "approved")),
         )
 
     async def get_kb_raw(self, kb_id: str) -> dict | None:
@@ -101,29 +104,49 @@ class ContentManagementService:
         return {"id": str(row["id"]), "created_by_keycloak_id": row.get("created_by_keycloak_id")}
 
     async def list_kbs(
-        self, organization_id: str, include_archived: bool = False, approved_only: bool = True
+        self, organization_id: str, include_archived: bool = False,
+        approved_only: bool = True, caller_keycloak_id: str | None = None
     ) -> list[KnowledgeBase]:
         async with self._pool.acquire() as conn:
-            approval_clause = "AND approval_status = 'approved'::kb_approval_status_enum" if approved_only else ""
+            # Callers see approved KBs + their own KBs regardless of status.
+            if approved_only and caller_keycloak_id:
+                approval_clause = (
+                    "AND (approval_status = 'approved'::kb_approval_status_enum "
+                    "     OR created_by_keycloak_id = $2)"
+                )
+                extra_params: list = [caller_keycloak_id]
+            elif approved_only:
+                approval_clause = "AND approval_status = 'approved'::kb_approval_status_enum"
+                extra_params = []
+            else:
+                approval_clause = ""
+                extra_params = []
+
             if include_archived:
                 rows = await conn.fetch(
                     f"""
-                    SELECT id, name, description, organization_id, is_active
-                    FROM knowledge_bases
+                    SELECT id, name, description, organization_id, is_active,
+                           age_group, created_by_keycloak_id, approval_status,
+                           (SELECT COUNT(*) FROM documents d
+                            WHERE d.knowledge_base_id = kb.id AND d.status = 'active') AS doc_count
+                    FROM knowledge_bases kb
                     WHERE organization_id = $1 {approval_clause}
                     ORDER BY is_active DESC, created_at DESC
                     """,
-                    organization_id,
+                    organization_id, *extra_params,
                 )
             else:
                 rows = await conn.fetch(
                     f"""
-                    SELECT id, name, description, organization_id, is_active
-                    FROM knowledge_bases
+                    SELECT id, name, description, organization_id, is_active,
+                           age_group, created_by_keycloak_id, approval_status,
+                           (SELECT COUNT(*) FROM documents d
+                            WHERE d.knowledge_base_id = kb.id AND d.status = 'active') AS doc_count
+                    FROM knowledge_bases kb
                     WHERE organization_id = $1 AND is_active = true {approval_clause}
                     ORDER BY created_at DESC
                     """,
-                    organization_id,
+                    organization_id, *extra_params,
                 )
         return [
             KnowledgeBase(
@@ -132,6 +155,10 @@ class ContentManagementService:
                 description=r["description"] or "",
                 organization_id=r["organization_id"],
                 is_active=r["is_active"],
+                age_group=r.get("age_group"),
+                created_by_keycloak_id=r.get("created_by_keycloak_id"),
+                approval_status=str(r.get("approval_status", "approved")),
+                doc_count=int(r.get("doc_count", 0)),
             )
             for r in rows
         ]

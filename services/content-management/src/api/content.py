@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from typing import Literal
 
 router = APIRouter(prefix="/api/v1", tags=["content-mgmt"])
 
@@ -46,6 +47,8 @@ async def create_kb(body: CreateKB, request: Request):
     return {
         "id": kb.id, "name": kb.name, "description": kb.description,
         "is_active": True, "age_group": kb.age_group,
+        "approval_status": kb.approval_status,
+        "created_by_keycloak_id": kb.created_by_keycloak_id,
     }
 
 
@@ -56,16 +59,25 @@ async def list_kbs(
     request: Request = None,
 ):
     svc = request.app.state.cms
-    # Only return approved courses to regular users; admins can see all statuses.
+    # Admins see all statuses; regular users only see approved KBs
+    # *plus* their own KBs (so creators can manage drafts/pending ones).
     user = getattr(getattr(request, "state", None), "user", None)
     is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    caller_keycloak_id = getattr(user, "sub", None) if user else None
     items = await svc.list_kbs(
         organization_id,
         include_archived=include_archived,
         approved_only=not is_admin,
+        caller_keycloak_id=caller_keycloak_id,
     )
     return {"items": [
-        {"id": kb.id, "name": kb.name, "description": kb.description, "is_active": kb.is_active}
+        {
+            "id": kb.id, "name": kb.name, "description": kb.description,
+            "is_active": kb.is_active, "age_group": kb.age_group,
+            "approval_status": kb.approval_status,
+            "created_by_keycloak_id": kb.created_by_keycloak_id,
+            "doc_count": kb.doc_count,
+        }
         for kb in items
     ]}
 
@@ -79,7 +91,12 @@ async def get_kb(kb_id: str, request: Request):
         raise HTTPException(404, "Knowledge base not found")
     if not kb:
         raise HTTPException(404, "Knowledge base not found")
-    return {"id": kb.id, "name": kb.name, "description": kb.description, "is_active": kb.is_active}
+    return {
+        "id": kb.id, "name": kb.name, "description": kb.description,
+        "is_active": kb.is_active, "age_group": kb.age_group,
+        "approval_status": kb.approval_status,
+        "created_by_keycloak_id": kb.created_by_keycloak_id,
+    }
 
 
 @router.put("/knowledge-bases/{kb_id}")
@@ -179,3 +196,41 @@ async def retire_doc(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(404, "Document not found")
     return {"id": doc.id, "is_active": doc.is_active, "retired_at": doc.retired_at.isoformat() if doc.retired_at else None}
+
+
+class ApprovalAction(BaseModel):
+    action: Literal["approve", "reject", "request_clarification"]
+    reason: str | None = None
+
+
+@router.get("/knowledge-bases/admin/pending")
+async def list_pending_kbs(request: Request):
+    """Admin-only: list all knowledge bases with pending_review status."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    svc = request.app.state.cms
+    items, _total = await svc.list_by_approval_status("pending_review")
+    return {"items": items}
+
+
+@router.patch("/knowledge-bases/{kb_id}/approval")
+async def set_kb_approval(kb_id: str, body: ApprovalAction, request: Request):
+    """Admin-only: approve, reject, or request clarification on a course."""
+    user = getattr(getattr(request, "state", None), "user", None)
+    is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    svc = request.app.state.cms
+    status_map = {
+        "approve":               "approved",
+        "reject":                "rejected",
+        "request_clarification": "clarification_requested",
+    }
+    new_status = status_map[body.action]
+    await svc.update_kb_field(kb_id, "approval_status", new_status)
+    if body.reason:
+        field = "rejection_reason" if body.action == "reject" else "clarification_message"
+        await svc.update_kb_field(kb_id, field, body.reason)
+    return {"kb_id": kb_id, "approval_status": new_status}
