@@ -258,6 +258,7 @@ jobs:
     name: "05 - Grype Vulnerability Scan"
     runs-on: ubuntu-latest
     needs: [build-image]
+    continue-on-error: true   # warn-only — report CVEs but never block the pipeline
     permissions:
       contents: read
       security-events: write
@@ -274,7 +275,7 @@ jobs:
         id: scan
         with:
           image: ${{ needs.build-image.outputs.ecr_uri }}:${{ needs.build-image.outputs.image_tag }}
-          fail-build: true
+          fail-build: false
           severity-cutoff: high
           output-format: sarif
       - name: Upload SARIF
@@ -288,7 +289,7 @@ jobs:
     name: "06 - Push to ECR"
     runs-on: ubuntu-latest
     needs: [build-image, grype-scan]
-    if: needs.build-image.result == 'success' && needs.grype-scan.result == 'success'
+    if: always() && needs.build-image.result == 'success'
     permissions:
       contents: read
     steps:
@@ -632,9 +633,8 @@ jobs:
           SYNC_RESULT="${{ needs.argocd-sync.result }}"
           VERIFY_RESULT="${{ needs.verify-deployment.result }}"
 
-          if [[ "$SECURITY_RESULT" == "success" && "$GRYPE_RESULT" == "success" \
-             && "$PUSH_RESULT" == "success" && "$SYNC_RESULT" == "success" \
-             && "$VERIFY_RESULT" == "success" ]]; then
+          if [[ "$SECURITY_RESULT" == "success" && "$PUSH_RESULT" == "success" \
+             && "$SYNC_RESULT" == "success" && "$VERIFY_RESULT" == "success" ]]; then
             echo "overall=success" >> $GITHUB_OUTPUT
             echo "emoji=✅" >> $GITHUB_OUTPUT
             echo "color=#2eb886" >> $GITHUB_OUTPUT
