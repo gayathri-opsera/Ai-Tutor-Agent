@@ -1,6 +1,26 @@
 -- Seed: sample data for local development
--- Users (PII-safe: encrypted fields use placeholder bytes, email_hash is sha256)
+-- Clean slate: remove stale seed data in FK-safe order before re-inserting.
+DELETE FROM content_feedback  WHERE message_id IN (SELECT id FROM chat_messages WHERE session_id IN (SELECT id FROM chat_sessions WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003')));
+DELETE FROM chat_messages     WHERE session_id IN (SELECT id FROM chat_sessions WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003'));
+DELETE FROM chat_sessions     WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003');
+DELETE FROM assessment_results WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003');
+DELETE FROM learner_profiles  WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003');
+DELETE FROM enrollments       WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003');
+DELETE FROM user_local_auth   WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003');
+DELETE FROM user_roles        WHERE user_id IN ('aaaaaaaa-0001-0000-0000-000000000001','aaaaaaaa-0002-0000-0000-000000000002','aaaaaaaa-0003-0000-0000-000000000003');
+-- Also purge any users with the same email_hash that have different auto-generated IDs
+DELETE FROM user_roles      WHERE user_id IN (SELECT id FROM users WHERE email_hash IN (encode(digest('admin@ai-tutor.local','sha256'),'hex'), encode(digest('creator@ai-tutor.local','sha256'),'hex'), encode(digest('learner@ai-tutor.local','sha256'),'hex')));
+DELETE FROM user_local_auth WHERE user_id IN (SELECT id FROM users WHERE email_hash IN (encode(digest('admin@ai-tutor.local','sha256'),'hex'), encode(digest('creator@ai-tutor.local','sha256'),'hex'), encode(digest('learner@ai-tutor.local','sha256'),'hex')));
+DELETE FROM enrollments     WHERE user_id IN (SELECT id FROM users WHERE email_hash IN (encode(digest('admin@ai-tutor.local','sha256'),'hex'), encode(digest('creator@ai-tutor.local','sha256'),'hex'), encode(digest('learner@ai-tutor.local','sha256'),'hex')));
+DELETE FROM users           WHERE email_hash IN (encode(digest('admin@ai-tutor.local','sha256'),'hex'), encode(digest('creator@ai-tutor.local','sha256'),'hex'), encode(digest('learner@ai-tutor.local','sha256'),'hex'));
 
+-- Clean seed knowledge bases and dependent data
+DELETE FROM document_chunks WHERE document_id IN (SELECT id FROM documents WHERE knowledge_base_id IN ('bbbbbbbb-0001-0000-0000-000000000001','bbbbbbbb-0002-0000-0000-000000000002'));
+DELETE FROM documents       WHERE knowledge_base_id IN ('bbbbbbbb-0001-0000-0000-000000000001','bbbbbbbb-0002-0000-0000-000000000002');
+DELETE FROM enrollments     WHERE kb_id IN ('bbbbbbbb-0001-0000-0000-000000000001','bbbbbbbb-0002-0000-0000-000000000002');
+DELETE FROM knowledge_bases WHERE id IN ('bbbbbbbb-0001-0000-0000-000000000001','bbbbbbbb-0002-0000-0000-000000000002');
+
+-- Users (PII-safe: encrypted fields use placeholder bytes, email_hash is sha256)
 INSERT INTO users (id, email_encrypted, email_hash, full_name_encrypted, keycloak_id, is_active)
 VALUES
   ('aaaaaaaa-0001-0000-0000-000000000001',
@@ -12,7 +32,7 @@ VALUES
   ('aaaaaaaa-0003-0000-0000-000000000003',
    '\x6c6561726e6572',   encode(digest('learner@ai-tutor.local', 'sha256'), 'hex'),
    '\x4361726f6c204c65', 'keycloak-learner-003', true)
-ON CONFLICT (email_hash) DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO user_roles (user_id, role_id) VALUES
   ('aaaaaaaa-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000003'), -- Admin
@@ -30,7 +50,7 @@ VALUES
    'Machine Learning Basics',
    'Intro to supervised, unsupervised, and reinforcement learning.',
    'default', 'aaaaaaaa-0002-0000-0000-000000000002', true)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO documents (id, knowledge_base_id, title, content_type, status, chunk_count, uploaded_by)
 VALUES
@@ -40,7 +60,7 @@ VALUES
    'Async Programming in Python','text', 'active', 1, 'aaaaaaaa-0002-0000-0000-000000000002'),
   ('cccccccc-0003-0000-0000-000000000003', 'bbbbbbbb-0002-0000-0000-000000000002',
    'Linear Regression Explained','text', 'active', 1, 'aaaaaaaa-0002-0000-0000-000000000002')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO document_chunks (id, document_id, chunk_index, chunk_text, vector_id, metadata)
 VALUES
@@ -56,13 +76,13 @@ VALUES
   ('dddddddd-0004-0000-0000-000000000004', 'cccccccc-0003-0000-0000-000000000003', 0,
    'Linear regression models the relationship between a dependent and independent variable using a linear equation fitted to observed data.',
    'vec-ml-001', '{"page": 1}')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO learner_profiles (id, user_id, preferred_difficulty, total_sessions, total_queries)
 VALUES
   ('eeeeeeee-0001-0000-0000-000000000001',
    'aaaaaaaa-0003-0000-0000-000000000003', 'beginner', 1, 2)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO chat_sessions (id, user_id, knowledge_base_id, title)
 VALUES
@@ -70,7 +90,7 @@ VALUES
    'aaaaaaaa-0003-0000-0000-000000000003',
    'bbbbbbbb-0001-0000-0000-000000000001',
    'Learning Python Basics')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO chat_messages (id, session_id, role, content, confidence_score, tokens_used)
 VALUES
@@ -80,4 +100,4 @@ VALUES
    'assistant',
    'Python is a high-level interpreted language prized for readable syntax. Widely used in data science, AI/ML, web development, and automation.',
    0.92, 35)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
