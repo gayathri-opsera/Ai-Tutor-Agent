@@ -90,7 +90,9 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
   data_classification data_classification_enum NOT NULL DEFAULT 'INTERNAL'
 );
 -- 0006 additions
-ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'pending_review';
+-- Correct the default so new rows require explicit approval
+ALTER TABLE knowledge_bases ALTER COLUMN approval_status SET DEFAULT 'pending_review';
 ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS ai_overview TEXT;
 ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS clarification_message TEXT;

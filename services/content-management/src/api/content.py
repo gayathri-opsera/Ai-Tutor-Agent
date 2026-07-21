@@ -39,10 +39,14 @@ async def create_kb(body: CreateKB, request: Request):
     svc = request.app.state.cms
     user = getattr(getattr(request, "state", None), "user", None)
     creator_keycloak_id = getattr(user, "sub", None) if user else None
+    # Admins may publish immediately; all other roles enter the approval queue.
+    is_admin = user and any(r in {"Admin", "SuperAdmin"} for r in getattr(user, "roles", []))
+    initial_status = "approved" if is_admin else "pending_review"
     kb = await svc.create_kb(
         body.name, body.organization_id, body.description,
         age_group=body.age_group,
         created_by_keycloak_id=creator_keycloak_id,
+        approval_status=initial_status,
     )
     return {
         "id": kb.id, "name": kb.name, "description": kb.description,

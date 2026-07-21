@@ -52,23 +52,25 @@ class ContentManagementService:
     async def create_kb(
         self, name: str, organization_id: str, description: str = "",
         age_group: str | None = None, created_by_keycloak_id: str | None = None,
+        approval_status: str = "pending_review",
     ) -> KnowledgeBase:
         kb_id = str(uuid.uuid4())
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO knowledge_bases (id, name, description, organization_id,
-                                             age_group, created_by_keycloak_id)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                                             age_group, created_by_keycloak_id, approval_status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 kb_id, name, description, organization_id,
-                age_group, created_by_keycloak_id,
+                age_group, created_by_keycloak_id, approval_status,
             )
         return KnowledgeBase(
             id=kb_id, name=name, organization_id=organization_id,
             description=description, age_group=age_group,
             created_by_keycloak_id=created_by_keycloak_id,
+            approval_status=approval_status,
         )
 
     async def get_kb(self, kb_id: str) -> KnowledgeBase | None:
