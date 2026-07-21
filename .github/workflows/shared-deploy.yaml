@@ -378,21 +378,25 @@ jobs:
           git add "${PATCH_FILE}"
           git commit -m "chore(deploy): update ${{ inputs.service }} to ${{ needs.build-image.outputs.image_tag }} [skip ci]"
 
-          for i in 1 2 3; do
+          for i in $(seq 1 10); do
             if git push origin main; then
-              echo "✅ Pushed manifest update"
+              echo "✅ Pushed manifest update on attempt ${i}"
               exit 0
             fi
-            echo "Push conflict, rebasing... (${i}/3)"
-            if git pull --rebase origin main; then
-              sleep 2
+            WAIT=$(( (RANDOM % 10) + (i * 5) ))  # jitter 5-55s, increasing each retry
+            echo "Push conflict on attempt ${i}/10 — pulling latest and retrying in ${WAIT}s…"
+            git fetch origin main
+            if git rebase origin/main; then
+              sleep "${WAIT}"
               continue
             fi
+            # Rebase conflict: keep our version of the service patch file
             git checkout --ours "${PATCH_FILE}"
             git add "${PATCH_FILE}"
-            GIT_EDITOR=true git rebase --continue
-            sleep 2
+            GIT_EDITOR=true git rebase --continue 2>/dev/null || true
+            sleep "${WAIT}"
           done
+          echo "❌ Failed to push after 10 attempts"
           exit 1
 
   # ── Stage 08 ────────────────────────────────────────────────────────────────
