@@ -13,6 +13,11 @@ on:
         required: false
         default: "manual deploy"
 
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+
 jobs:
   deploy:
     uses: ./.github/workflows/shared-deploy.yaml
