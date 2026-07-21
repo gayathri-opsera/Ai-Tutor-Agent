@@ -68,14 +68,14 @@ async def _delta_sync_vectors(pool: asyncpg.Pool, rag_service: RAGPipelineServic
             rows = await conn.fetch(
                 """
                 SELECT dc.id, dc.document_id, dc.chunk_text, dc.metadata,
-                       dc.updated_at,
+                       d.updated_at,
                        d.title AS document_title,
                        kb.id   AS knowledge_base_id
                 FROM document_chunks dc
                 JOIN documents d  ON d.id  = dc.document_id
                 JOIN knowledge_bases kb ON kb.id = d.knowledge_base_id
                 WHERE d.is_active = true
-                  AND dc.updated_at > $1
+                  AND d.updated_at > $1
                 ORDER BY dc.document_id, dc.chunk_index
                 """,
                 watermark,

@@ -56,9 +56,9 @@ data:
   LOG_FORMAT: "json"
 
   # Inter-service URLs (within same namespace, using short K8s DNS)
-  LLM_GATEWAY_URL: "http://llm-gateway:8000"
-  EMBEDDING_SERVICE_URL: "http://embedding-service:8001"
-  RAG_SERVICE_URL: "http://rag-pipeline:8002"
+  LLM_GATEWAY_URL: "http://llm-gateway:8001"
+  EMBEDDING_SERVICE_URL: "http://embedding-service:8002"
+  RAG_SERVICE_URL: "http://rag-pipeline:8003"
   GRADER_SERVICE_URL: "http://confidence-grader:8006"
   KEYCLOAK_URL: "http://keycloak:8080"
   WEAVIATE_URL: "http://weaviate:8080"

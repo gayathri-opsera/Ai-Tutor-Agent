@@ -25,7 +25,7 @@ spec:
         - name: rag-pipeline
           image: PLACEHOLDER_ECR_URI_RAG_PIPELINE
           ports:
-            - containerPort: 8002
+            - containerPort: 8003
           envFrom:
             - configMapRef:
                 name: ai-tutor-config
@@ -41,13 +41,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8002
+              port: 8003
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
-              port: 8002
+              port: 8003
             initialDelaySeconds: 30
             periodSeconds: 30

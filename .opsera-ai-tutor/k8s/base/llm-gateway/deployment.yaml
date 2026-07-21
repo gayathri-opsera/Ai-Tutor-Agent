@@ -25,7 +25,7 @@ spec:
         - name: llm-gateway
           image: PLACEHOLDER_ECR_URI_LLM_GATEWAY
           ports:
-            - containerPort: 8000
+            - containerPort: 8001
           envFrom:
             - configMapRef:
                 name: ai-tutor-config
@@ -41,13 +41,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8000
+              port: 8001
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
-              port: 8000
+              port: 8001
             initialDelaySeconds: 30
             periodSeconds: 30

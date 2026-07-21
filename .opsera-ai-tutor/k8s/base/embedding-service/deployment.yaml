@@ -23,7 +23,7 @@ spec:
         - name: embedding-service
           image: PLACEHOLDER_ECR_URI_EMBEDDING_SERVICE
           ports:
-            - containerPort: 8001
+            - containerPort: 8002
           env:
             - name: TORCHINDUCTOR_CACHE_DIR
               value: /tmp/torch_cache
@@ -44,13 +44,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8001
+              port: 8002
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
-              port: 8001
+              port: 8002
             initialDelaySeconds: 30
             periodSeconds: 30

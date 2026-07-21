@@ -10,6 +10,6 @@ spec:
     app: llm-gateway
   ports:
     - name: http
-      port: 8000
-      targetPort: 8000
+      port: 8001
+      targetPort: 8001
   type: ClusterIP
