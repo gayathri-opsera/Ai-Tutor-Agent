@@ -1,6 +1,8 @@
 """Chat Orchestrator FastAPI app."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 
 import asyncpg
@@ -13,6 +15,21 @@ from src.repository import DatabaseSessionRepository, InMemorySessionCache, Mock
 from src.service import ChatOrchestratorService
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+# Sessions older than this many days are automatically deleted.
+CHAT_RETENTION_DAYS = int(os.getenv("CHAT_RETENTION_DAYS", "7"))
+
+logger = logging.getLogger(__name__)
+
+
+async def _purge_loop(repo: DatabaseSessionRepository, interval_hours: int = 24) -> None:
+    """Background task: purge old chat sessions every `interval_hours` hours."""
+    while True:
+        await asyncio.sleep(interval_hours * 3600)
+        try:
+            await repo.purge_old_sessions(CHAT_RETENTION_DAYS)
+        except Exception as exc:
+            logger.warning("Purge loop error: %s", exc)
 
 
 def create_app(repository=None) -> FastAPI:
@@ -35,8 +52,10 @@ def create_app(repository=None) -> FastAPI:
                 pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
                 repo = DatabaseSessionRepository(pool)
                 app.state.db_pool = pool
+                # Run an immediate purge on startup, then every 24 hours.
+                await repo.purge_old_sessions(CHAT_RETENTION_DAYS)
+                asyncio.create_task(_purge_loop(repo))
             except Exception as exc:
-                import logging
                 logging.getLogger(__name__).warning("DB unavailable, using in-memory repo: %s", exc)
                 repo = MockSessionRepository()
         else:

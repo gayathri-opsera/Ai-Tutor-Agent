@@ -87,8 +87,8 @@ class AnalyticsService:
                     kb.name                                     AS title,
                     kb.age_group,
                     kb.approval_status,
-                    COUNT(DISTINCT ltp.user_id)                 AS enrollment_count,
-                    COALESCE(AVG(ltp.completion_pct), 0)        AS avg_completion_pct,
+                    COUNT(DISTINCT ltp.learner_profile_id)                 AS enrollment_count,
+                    COALESCE(AVG(ltp.proficiency_score), 0)        AS avg_proficiency_score,
                     COALESCE(AVG(ar.score), 0)                  AS avg_assessment_score
                 FROM knowledge_bases kb
                 LEFT JOIN learner_topic_progress ltp ON ltp.knowledge_base_id = kb.id
@@ -114,7 +114,7 @@ class AnalyticsService:
                     "age_group":           r["age_group"],
                     "approval_status":     str(r["approval_status"]),
                     "enrollment_count":    int(r["enrollment_count"]),
-                    "avg_completion_pct":  round(float(r["avg_completion_pct"]), 1),
+                    "avg_proficiency_score":  round(float(r["avg_proficiency_score"]), 1),
                     "avg_assessment_score": round(float(r["avg_assessment_score"]), 1),
                 }
                 for r in courses
@@ -149,7 +149,7 @@ class AnalyticsService:
             # Top 10 most enrolled courses
             top_courses = await conn.fetch(
                 """
-                SELECT kb.name AS title, COUNT(DISTINCT ltp.user_id) AS enrollments
+                SELECT kb.name AS title, COUNT(DISTINCT ltp.learner_profile_id) AS enrollments
                 FROM knowledge_bases kb
                 LEFT JOIN learner_topic_progress ltp ON ltp.knowledge_base_id = kb.id
                 WHERE kb.is_active = true AND kb.approval_status = 'approved'

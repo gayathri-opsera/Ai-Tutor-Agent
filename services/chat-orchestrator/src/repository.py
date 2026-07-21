@@ -25,6 +25,7 @@ class SessionRepository(Protocol):
     async def get_history(self, session_id: str) -> list[Message]: ...
     async def list_sessions(self, user_id: str) -> list[dict]: ...
     async def rename_session(self, session_id: str, title: str) -> bool: ...
+    async def delete_session(self, session_id: str) -> bool: ...
 
 
 # ── In-memory implementations ─────────────────────────────────────────────────
@@ -68,6 +69,9 @@ class MockSessionRepository:
             return False
         s.title = title
         return True
+
+    async def delete_session(self, session_id: str) -> bool:
+        return self.sessions.pop(session_id, None) is not None
 
 
 class DatabaseSessionRepository:
@@ -167,3 +171,38 @@ class DatabaseSessionRepository:
         except Exception as exc:
             logger.warning("Failed to rename session %s: %s", session_id, exc)
             return False
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Hard-delete a session and its messages (CASCADE handles messages)."""
+        try:
+            async with self._pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM chat_sessions WHERE id = $1",
+                    session_id,
+                )
+            return result == "DELETE 1"
+        except Exception as exc:
+            logger.warning("Failed to delete session %s: %s", session_id, exc)
+            return False
+
+    async def purge_old_sessions(self, retention_days: int = 7) -> int:
+        """Delete chat sessions (and their messages via CASCADE) older than retention_days.
+
+        Returns the number of sessions deleted.
+        """
+        try:
+            async with self._pool.acquire() as conn:
+                result = await conn.execute(
+                    """
+                    DELETE FROM chat_sessions
+                    WHERE created_at < NOW() - ($1 || ' days')::INTERVAL
+                    """,
+                    str(retention_days),
+                )
+            deleted = int(result.split()[-1]) if result else 0
+            if deleted:
+                logger.info("Purged %d chat sessions older than %d days", deleted, retention_days)
+            return deleted
+        except Exception as exc:
+            logger.warning("Failed to purge old sessions: %s", exc)
+            return 0

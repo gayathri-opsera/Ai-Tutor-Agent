@@ -23,6 +23,7 @@ class RenameSessionRequest(BaseModel):
 class MessageRequest(BaseModel):
     content: str
     knowledge_base_id: str | None = None
+    lesson_context: str | None = None   # current lesson transcript/content for in-course chat
 
 
 # ── Ownership helper ──────────────────────────────────────────────────────────
@@ -88,6 +89,15 @@ async def rename_session(session_id: str, body: RenameSessionRequest, request: R
     return {"id": session_id, "title": title}
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(session_id: str, request: Request):
+    """Permanently delete a chat session and all its messages."""
+    svc: ChatOrchestratorService = request.app.state.chat_service
+    await _assert_session_owner(session_id, request, svc)
+    await svc.delete_session(session_id)
+    # Return 204 No Content regardless — idempotent delete
+
+
 @router.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, body: MessageRequest, request: Request):
     svc: ChatOrchestratorService = request.app.state.chat_service
@@ -100,7 +110,9 @@ async def send_message(session_id: str, body: MessageRequest, request: Request):
             if s:
                 s.knowledge_base_id = kb_id
                 await svc.update_session(s)
-        async for event in svc.stream_response(session_id, body.content, rag_chunks=None):
+        async for event in svc.stream_response(
+            session_id, body.content, rag_chunks=None, lesson_context=body.lesson_context
+        ):
             yield {"event": event.split("\n")[0].replace("event: ", ""), "data": event.split("data: ", 1)[-1].strip()}
 
     return EventSourceResponse(event_generator())

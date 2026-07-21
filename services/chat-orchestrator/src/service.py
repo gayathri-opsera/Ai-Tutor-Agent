@@ -97,6 +97,10 @@ class ChatOrchestratorService:
         """Rename a session in the repository. Returns False if not found."""
         return await self._repository.rename_session(session_id, title)
 
+    async def delete_session(self, session_id: str) -> bool:
+        """Permanently delete a session and all its messages."""
+        return await self._repository.delete_session(session_id)
+
     async def get_history(self, session_id: str) -> list[Message]:
         """Return full message history for a session from the repository."""
         return await self._repository.get_history(session_id)
@@ -126,13 +130,22 @@ class ChatOrchestratorService:
         user_message: str,
         rag_context: str,
         has_grounding: bool = True,
+        lesson_context: str | None = None,
     ) -> list[dict]:
         """Build the messages list for the LLM gateway request."""
         kb_scoped = bool(session.knowledge_base_id)
         if kb_scoped:
             system_content = KB_SYSTEM_PROMPT
+            # Prefer RAG context; supplement with the current lesson content when provided.
             if rag_context:
                 system_content += f"\n\n## Course Materials\n\n{rag_context}"
+                if lesson_context:
+                    system_content += f"\n\n## Current Lesson (full transcript/content)\n\n{lesson_context}"
+            elif lesson_context:
+                # RAG returned nothing but we have the lesson the learner is reading — use it.
+                system_content += f"\n\n## Current Lesson (full transcript/content)\n\n{lesson_context}"
+            else:
+                system_content += "\n\n## Course Materials\n\n(No specific course content was retrieved for this question — answer from general knowledge.)"
         else:
             system_content = SYSTEM_PROMPT
             if rag_context:
@@ -151,6 +164,7 @@ class ChatOrchestratorService:
         session_id: str,
         user_message: str,
         rag_chunks: list[dict] | None = None,
+        lesson_context: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream a response from Claude via the LLM Gateway."""
         session = await self._cache.get(session_id)
@@ -209,7 +223,7 @@ class ChatOrchestratorService:
 
         await self._cache.set(session)
 
-        llm_messages = self._build_llm_messages(session, user_message, rag_context, has_grounding)
+        llm_messages = self._build_llm_messages(session, user_message, rag_context, has_grounding, lesson_context)
         full_answer = ""
         llm_error = False
         try:

@@ -21,9 +21,10 @@ DB_DSN = os.getenv(
     "postgresql://ai_tutor:ai_tutor_local_password@postgres:5432/ai_tutor"  # local-dev only — set DATABASE_URL in production,
 )
 
-# Internal service endpoints for LLM question generation
-LLM_GATEWAY_URL = os.getenv("LLM_GATEWAY_URL", "http://llm-gateway:8004")
-RAG_PIPELINE_URL = os.getenv("RAG_PIPELINE_URL", "http://rag-pipeline:8006")
+# Internal service endpoints for LLM question generation.
+# Ports match docker-compose service definitions (llm-gateway:8000, rag-pipeline:8002).
+LLM_GATEWAY_URL = os.getenv("LLM_GATEWAY_URL", "http://llm-gateway:8000")
+RAG_PIPELINE_URL = os.getenv("RAG_PIPELINE_URL", "http://rag-pipeline:8002")
 
 
 class AssessmentType(str, Enum):
@@ -307,7 +308,7 @@ Rules:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
-                    f"{RAG_PIPELINE_URL}/api/v1/rag/retrieve",
+                    f"{RAG_PIPELINE_URL}/api/internal/rag/retrieve",
                     json={
                         "query": topic,
                         "knowledge_base_id": knowledge_base_id,
@@ -345,7 +346,7 @@ Rules:
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 resp = await client.post(
-                    f"{LLM_GATEWAY_URL}/api/internal/llm/generate",
+                    f"{LLM_GATEWAY_URL}/api/internal/llm/completions",
                     json={
                         "messages": [{"role": "user", "content": prompt}],
                         "max_tokens": 2000,
@@ -354,7 +355,13 @@ Rules:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    raw = data.get("content") or data.get("text", "")
+                    # CompletionResponse shape: {"choices": [{"message_content": "..."}], ...}
+                    raw = ""
+                    choices = data.get("choices") or []
+                    if choices:
+                        raw = choices[0].get("message_content", "")
+                    if not raw:
+                        raw = data.get("content") or data.get("text", "")
                     # Strip markdown code fences if present
                     if "```" in raw:
                         raw = raw.split("```")[1]

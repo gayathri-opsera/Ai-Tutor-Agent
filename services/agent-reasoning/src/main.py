@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.agent import ReActAgent
 from src.api.agent import router as agent_router
 from src.web_search import WebSearchService
-from libs.auth.src.service_middleware import ServiceAuthMiddleware  # bundled via Dockerfile COPY libs/
+from service_middleware import ServiceAuthMiddleware  # libs/auth/src/ in PYTHONPATH via Dockerfile
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
@@ -54,7 +54,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Agent Reasoning", version="1.0.0", lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-    app.add_middleware(ServiceAuthMiddleware)
+    app.add_middleware(
+        ServiceAuthMiddleware,
+        exclude_paths=["/health", "/ready", "/metrics", "/docs", "/openapi.json", "/api/internal"],
+    )
     app.include_router(agent_router)
 
     @app.get("/health")
