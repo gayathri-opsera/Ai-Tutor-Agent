@@ -52,7 +52,8 @@ type = layers
 layers =
     src.api
     src.service
-    src
+    src.rag_client | src.repository
+    src.models
 include_paths =
     services/chat-orchestrator
 
