@@ -285,9 +285,13 @@ export function CourseDetailPage() {
         body: JSON.stringify({
           content,
           knowledge_base_id: kbId,
-          // Include the currently-viewed lesson content so the AI always has it,
-          // even when cross-lingual embedding mismatches cause RAG to miss it.
-          lesson_context: docContent ? docContent.slice(0, 6000) : undefined,
+          // Always send at least the lesson title so the LLM stays course-scoped
+          // even when docContent hasn't finished loading (e.g. first message).
+          lesson_context: docContent
+            ? docContent.slice(0, 6000)
+            : activeDoc
+            ? `Lesson title: ${activeDoc.title}\n(Full content is still loading — answer from course knowledge.)`
+            : undefined,
         }),
       });
       if (!resp.ok) throw new Error();

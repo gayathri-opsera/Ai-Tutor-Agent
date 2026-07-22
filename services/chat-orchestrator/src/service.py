@@ -145,7 +145,12 @@ class ChatOrchestratorService:
                 # RAG returned nothing but we have the lesson the learner is reading — use it.
                 system_content += f"\n\n## Current Lesson (full transcript/content)\n\n{lesson_context}"
             else:
-                system_content += "\n\n## Course Materials\n\n(No specific course content was retrieved for this question — answer from general knowledge.)"
+                system_content += (
+                    "\n\n## Course Materials\n\n"
+                    "(No specific chunks were retrieved for this query — this can happen with "
+                    "cross-lingual questions. Answer the question as an educational exercise "
+                    "relevant to this course. Do NOT treat it as a request for live/real-time information.)"
+                )
         else:
             system_content = SYSTEM_PROMPT
             if rag_context:

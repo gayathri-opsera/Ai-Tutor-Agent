@@ -86,9 +86,14 @@ def _demo_answer(question: str) -> str:
 
 
 async def _fetch_rag_context(
-    query: str, knowledge_base_id: str | None, top_k: int = 5
+    query: str, knowledge_base_id: str | None, top_k: int = 10
 ) -> list[dict]:
-    """Call the RAG pipeline to get relevant chunks. Returns [] on any failure."""
+    """Call the RAG pipeline to get relevant chunks. Returns [] on any failure.
+
+    top_k is intentionally high (10) because course content is often multilingual —
+    cross-lingual embedding distances are inflated, so we need a wider recall window
+    to ensure the most relevant chunk is not pruned before re-ranking.
+    """
     if not knowledge_base_id:
         return []
     try:
