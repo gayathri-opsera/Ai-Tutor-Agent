@@ -83,16 +83,17 @@ class AnalyticsService:
             courses = await conn.fetch(
                 f"""
                 SELECT
-                    kb.id                                       AS knowledge_base_id,
-                    kb.name                                     AS title,
+                    kb.id                                           AS knowledge_base_id,
+                    kb.name                                         AS title,
                     kb.age_group,
                     kb.approval_status,
-                    COUNT(DISTINCT ltp.learner_profile_id)                 AS enrollment_count,
-                    COALESCE(AVG(ltp.proficiency_score), 0)        AS avg_proficiency_score,
-                    COALESCE(AVG(ar.score), 0)                  AS avg_assessment_score
+                    COUNT(DISTINCT e.user_id)                       AS enrollment_count,
+                    COALESCE(AVG(ltp.proficiency_score), 0)         AS avg_proficiency_score,
+                    COALESCE(AVG(ar.score), 0)                      AS avg_assessment_score
                 FROM knowledge_bases kb
+                LEFT JOIN enrollments e   ON e.kb_id = kb.id
                 LEFT JOIN learner_topic_progress ltp ON ltp.knowledge_base_id = kb.id
-                LEFT JOIN assessments a ON a.knowledge_base_id = kb.id
+                LEFT JOIN assessments a   ON a.knowledge_base_id = kb.id
                 LEFT JOIN assessment_results ar ON ar.assessment_id = a.id
                 WHERE kb.is_active = true {filter_clause}
                 GROUP BY kb.id, kb.name, kb.age_group, kb.approval_status
